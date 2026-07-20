@@ -49,11 +49,11 @@ export const WMSStylePresets = {
   },
   
   WAVE_PERIOD: {
-    style: WMSColorPalettes.YLGNBU,
+    style: WMSColorPalettes.SPECTRAL,
     numcolorbands: 220,
     belowmincolor: 'transparent',
     abovemaxcolor: 'extend',
-    description: 'Seafoam-to-sunrise palette tailored for mean wave period'
+    description: 'Spectral palette for mean wave period: short periods red/orange, long periods blue/purple'
   },
   
   PEAK_WAVE_PERIOD: {

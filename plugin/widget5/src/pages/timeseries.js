@@ -3,7 +3,9 @@ import Plot from 'react-plotly.js';
 
 const TRACE_CONFIG = [
   { key: "hs",    label: "Wave Height", color: 'rgb(56,189,248)',  unit: 'm', yaxis: 'y',  mode: 'lines+markers' },
+  { key: "tm02",  label: "Mean Period", color: 'rgb(34,197,94)',   unit: 's', yaxis: 'y2', mode: 'lines+markers' },
   { key: "tpeak", label: "Peak Period", color: 'rgb(251,146,60)',  unit: 's', yaxis: 'y2', mode: 'lines+markers' },
+  { key: "dirm",  label: "Mean Wave Dir", color: 'rgb(167,139,250)', unit: '°', yaxis: 'y3', mode: 'markers' },
   { key: "dirp",  label: "Wave Dir",    color: 'rgb(167,139,250)', unit: '°', yaxis: 'y3', mode: 'markers' },
 ];
 
@@ -243,7 +245,7 @@ function Timeseries({ perVariableData, currentSliderDate, onTimeSelect }) {
       {/* Live stat badges at the current map slider time */}
       {nowTime && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px 4px', flexWrap: 'wrap' }}>
-          {TRACE_CONFIG.filter(cfg => cfg.key !== 'dirp').map(cfg => (
+          {TRACE_CONFIG.filter(cfg => cfg.key !== 'dirp' && cfg.key !== 'dirm').map(cfg => (
             <StatBadge
               key={cfg.key}
               label={cfg.label}

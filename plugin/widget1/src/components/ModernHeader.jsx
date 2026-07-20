@@ -1,26 +1,31 @@
 import React from 'react';
 
-const ModernHeader = () => {
-  const [currentTime, setCurrentTime] = React.useState(new Date());
+function getForecastStatus(capTime) {
+  if (capTime?.loading) {
+    return { label: 'Loading', color: '#94a3b8', pulse: true };
+  }
+  if (capTime?.availableTimestamps?.length) {
+    return {
+      label: 'Forecast data',
+      color: '#10b981',
+      pulse: true,
+      forecastStart: capTime.forecastStart ?? capTime.availableTimestamps[0],
+    };
+  }
+  if (!capTime?.forecastStart) {
+    return { label: 'Unavailable', color: '#94a3b8', pulse: false };
+  }
+  return { label: 'Forecast data', color: '#10b981', pulse: true, forecastStart: capTime.forecastStart };
+}
 
-  React.useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
+function formatForecastStart(dateLike) {
+  const date = new Date(dateLike);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+}
 
-  const formatDateTime = (date) => {
-    return date.toLocaleString(undefined, {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    });
-  };
+const ModernHeader = ({ capTime }) => {
+  const status = getForecastStatus(capTime);
 
   return (
     <nav style={{
@@ -62,7 +67,7 @@ const ModernHeader = () => {
             WebkitTextFillColor: 'transparent',
             backgroundClip: 'text'
           }}>
-            Niue Wave and Innundation Forecast System
+            Niue Wave and Inundation Forecast System
           </h1>
           <p style={{
             margin: 0,
@@ -82,24 +87,32 @@ const ModernHeader = () => {
         alignItems: 'center',
         gap: '20px'
       }}>
-        {/* Connection Status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        {/* Forecast metadata. The zarr source exposes forecast valid times,
+            not a certified model-run/init timestamp, so avoid displaying a
+            fabricated "model run age" here. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }} title={
+          status.forecastStart ? `First forecast valid time: ${formatForecastStart(status.forecastStart)}` : undefined
+        }>
           <div style={{
             width: '8px',
             height: '8px',
             borderRadius: '50%',
-            backgroundColor: '#10b981',
-            boxShadow: '0 0 6px rgba(16, 185, 129, 0.6)',
-            animation: 'pulse 2s infinite'
+            backgroundColor: status.color,
+            boxShadow: `0 0 6px ${status.color}99`,
+            animation: status.pulse ? 'pulse 2s infinite' : 'none'
           }}></div>
-          <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.95)', fontWeight: '600' }}>Live</span>
-          <span style={{ 
-            fontSize: '0.8rem', 
-            color: 'rgba(255,255,255,0.85)',
-            marginLeft: '10px'
-          }}>
-            {formatDateTime(currentTime)}
+          <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.95)', fontWeight: '600' }}>
+            {status.label}
           </span>
+          {status.forecastStart && (
+            <span style={{
+              fontSize: '0.8rem',
+              color: 'rgba(255,255,255,0.85)',
+              marginLeft: '10px'
+            }}>
+              from {formatForecastStart(status.forecastStart)}
+            </span>
+          )}
         </div>
       </div>
 

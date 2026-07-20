@@ -4,6 +4,15 @@
   "private": true,
   "homepage": "/widget1",
   "dependencies": {
+    "@deck.gl/core": "^9.3.4",
+    "@deck.gl/layers": "^9.3.4",
+    "@deck.gl/mapbox": "^9.3.4",
+    "@deck.gl/react": "^9.3.4",
+    "@luma.gl/constants": "^9.3.5",
+    "@luma.gl/core": "^9.3.5",
+    "@luma.gl/engine": "^9.3.5",
+    "@luma.gl/shadertools": "^9.3.5",
+    "@luma.gl/webgl": "^9.3.5",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.6.4",
     "@testing-library/react": "^16.3.0",
@@ -16,8 +25,10 @@
     "framer-motion": "^12.23.24",
     "html2canvas": "^1.4.1",
     "jquery": "^3.7.1",
+    "jspdf": "^4.2.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.544.0",
+    "maplibre-gl": "^5.24.0",
     "plotly.js": "^3.1.0",
     "react": "^19.1.1",
     "react-bootstrap": "^2.10.10",
@@ -28,7 +39,8 @@
     "react-plotly.js": "^2.6.0",
     "react-router-dom": "^6.28.0",
     "react-scripts": "5.0.1",
-    "web-vitals": "^2.1.4"
+    "web-vitals": "^2.1.4",
+    "zarr": "^0.6.3"
   },
   "scripts": {
     "start": "craco start",

@@ -7,10 +7,10 @@ function getSeverityStyle(index, total) {
   if (index === 0) return { color: '#94a3b4', bg: 'rgba(148,163,180,0.08)' };
   if (total <= 2)  return { color: '#ef4444', bg: 'rgba(239,68,68,0.16)' };
   const t = (index - 1) / (total - 2);
-  if (t <= 0.15) return { color: '#38bdf8', bg: 'rgba(56,189,248,0.10)' };    // minor
-  if (t <= 0.40) return { color: '#facc15', bg: 'rgba(250,204,21,0.12)' };    // moderate
-  if (t <= 0.70) return { color: '#fb923c', bg: 'rgba(251,146,60,0.14)' };    // severe
-  return           { color: '#ef4444', bg: 'rgba(239,68,68,0.16)' };           // extreme
+  if (t <= 0.15) return { color: '#38bdf8', bg: 'rgba(56,189,248,0.10)' };   // minor
+  if (t <= 0.40) return { color: '#facc15', bg: 'rgba(250,204,21,0.12)' };   // moderate
+  if (t <= 0.70) return { color: '#fb923c', bg: 'rgba(251,146,60,0.14)' };   // severe
+  return           { color: '#ef4444', bg: 'rgba(239,68,68,0.16)' };          // extreme
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ function StatCard({ label, value, subtext, color, isDarkMode, live }) {
         fontWeight: 700,
         letterSpacing: '0.09em',
         textTransform: 'uppercase',
-        color: isDarkMode ? `rgba(${r},${g},${b},0.85)` : `rgba(${r},${g},${b},0.75)`,
+        color: isDarkMode ? '#94a3b8' : `rgba(${r},${g},${b},0.75)`,
         marginBottom: 4,
         display: 'flex', alignItems: 'center', gap: 4,
       }}>
@@ -116,7 +116,7 @@ function StatCard({ label, value, subtext, color, isDarkMode, live }) {
         {value}
       </div>
       {subtext && (
-        <div style={{ fontSize: 10, color: isDarkMode ? '#64748b' : '#94a3b8', marginTop: 2 }}>
+        <div style={{ fontSize: 10, color: isDarkMode ? '#94a3b8' : '#64748b', marginTop: 2 }}>
           {subtext}
         </div>
       )}
@@ -126,7 +126,7 @@ function StatCard({ label, value, subtext, color, isDarkMode, live }) {
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-function InundationTimeseries({ timeseries, categories, isDarkMode, currentSliderDate, onTimeSelect }) {
+function InundationTimeseries({ timeseries, categories, rangeWindow, isDarkMode, currentSliderDate, onTimeSelect }) {
   const [plotHeight, setPlotHeight] = useState(220);
   const [showThresholdLabels, setShowThresholdLabels] = useState(false);
   const chartRef = useRef(null);
@@ -146,9 +146,6 @@ function InundationTimeseries({ timeseries, categories, isDarkMode, currentSlide
       const paths = graphDiv?.querySelectorAll?.('.trace.scatter .lines path') || [];
       paths.forEach((path) => {
         try {
-          const length = path.getTotalLength();
-          if (!Number.isFinite(length) || length <= 0) return;
-          path.style.setProperty('--forecast-line-length', `${length}px`);
           path.classList.remove('forecast-line-enter');
           void path.getBoundingClientRect();
           path.classList.add('forecast-line-enter');
@@ -219,7 +216,7 @@ function InundationTimeseries({ timeseries, categories, isDarkMode, currentSlide
 
   // Trim to the operational range: dry → cok-maximum (inclusive).
   // Discards any API-injected test/extra categories beyond the max boundary
-  // so that getSeverityStyle positional mapping is never diluted by them.
+  // so that severity-T positional mapping is never diluted by them.
   const realCategories = useMemo(() => {
     if (!Array.isArray(categories)) return [];
     const maxIdx = categories.findIndex(c => c.id === 'cok-maximum');
@@ -232,10 +229,27 @@ function InundationTimeseries({ timeseries, categories, isDarkMode, currentSlide
     return Number(firstWet?.thresholdM) || 0.05;
   }, [realCategories]);
 
+  // Slice timeseries to the active range window so stats and chart match the map.
+  const activeTimeseries = useMemo(() => {
+    if (!Array.isArray(timeseries) || !timeseries.length) return timeseries;
+    const mode = rangeWindow?.mode;
+    if (!mode || mode === 'single') return timeseries;
+    const start = rangeWindow.startTime ? new Date(rangeWindow.startTime).getTime() : -Infinity;
+    const end   = rangeWindow.endTime   ? new Date(rangeWindow.endTime).getTime()   :  Infinity;
+    if (!Number.isFinite(start) && !Number.isFinite(end)) return timeseries;
+    const sliced = timeseries.filter(d => {
+      const t = new Date(d.time).getTime();
+      return t >= start && t <= end;
+    });
+    return sliced.length > 0 ? sliced : timeseries;
+  }, [timeseries, rangeWindow]);
+  // Keep the click-to-slider handler in sync with the visible (sliced) series.
+  timeseriesRef.current = activeTimeseries;
+
   // ── Stats ─────────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
-    if (!Array.isArray(timeseries) || !timeseries.length) return null;
-    const depths = timeseries.map(d => d.depth_m ?? 0);
+    if (!Array.isArray(activeTimeseries) || !activeTimeseries.length) return null;
+    const depths = activeTimeseries.map(d => d.depth_m ?? 0);
     const maxDepth = Math.max(...depths);
     const total = realCategories.length;
     const maxCat = total ? classifyDepth(realCategories, maxDepth) : null;
@@ -246,13 +260,13 @@ function InundationTimeseries({ timeseries, categories, isDarkMode, currentSlide
       : 0;
 
     let floodedHours = 0;
-    if (timeseries.length > 1) {
-      const dtH = (new Date(timeseries[1].time) - new Date(timeseries[0].time)) / 3.6e6;
+    if (activeTimeseries.length > 1) {
+      const dtH = (new Date(activeTimeseries[1].time) - new Date(activeTimeseries[0].time)) / 3.6e6;
       floodedHours = depths.filter(d => d > floodThresholdM).length * dtH;
     }
 
     return { maxDepth, maxCat, maxCatIdx, maxCatStyle, severityT, floodedHours };
-  }, [timeseries, realCategories, floodThresholdM]);
+  }, [activeTimeseries, realCategories, floodThresholdM]);
 
   const handleExportPDF = useCallback(() => {
     if (!plotlyDivRef.current) return;
@@ -289,7 +303,7 @@ function InundationTimeseries({ timeseries, categories, isDarkMode, currentSlide
   }, [stats]);
 
   // Live "at cursor"
-  const nowEntry = useMemo(() => closestEntry(timeseries, currentSliderDate), [timeseries, currentSliderDate]);
+  const nowEntry = useMemo(() => closestEntry(activeTimeseries, currentSliderDate), [activeTimeseries, currentSliderDate]);
   const nowDepth = nowEntry?.depth_m ?? 0;
   const total = realCategories.length;
   const nowCat = total ? classifyDepth(realCategories, nowDepth) : null;
@@ -298,17 +312,17 @@ function InundationTimeseries({ timeseries, categories, isDarkMode, currentSlide
 
   // ── Chart data ────────────────────────────────────────────────────────────
   const { times, depths, peakStyle } = useMemo(() => {
-    if (!Array.isArray(timeseries) || !timeseries.length) {
+    if (!Array.isArray(activeTimeseries) || !activeTimeseries.length) {
       return { times: [], depths: [], peakStyle: { color: '#888888' } };
     }
-    const times = timeseries.map(d => new Date(d.time));
-    const depths = timeseries.map(d => d.depth_m ?? 0);
+    const times = activeTimeseries.map(d => new Date(d.time));
+    const depths = activeTimeseries.map(d => d.depth_m ?? 0);
     const maxD = Math.max(...depths);
     const n = realCategories.length;
     const peak = n ? classifyDepth(realCategories, maxD) : null;
     const peakIdx = peak ? realCategories.indexOf(peak) : 0;
     return { times, depths, peakStyle: getSeverityStyle(peakIdx, n) };
-  }, [timeseries, realCategories]);
+  }, [activeTimeseries, realCategories]);
 
   const traces = useMemo(() => {
     if (!times.length) return [];
@@ -411,11 +425,11 @@ function InundationTimeseries({ timeseries, categories, isDarkMode, currentSlide
   }, [stats]);
 
   // ── Theme tokens ──────────────────────────────────────────────────────────
-  const grid = isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  const tick = isDarkMode ? '#475569' : '#94a3b8';
-  const axisTitle = isDarkMode ? '#64748b' : '#94a3b8';
+  const grid = isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  const tick = isDarkMode ? '#94a3b8' : '#64748b';
+  const axisTitle = isDarkMode ? '#94a3b8' : '#64748b';
 
-  if (!timeseries?.length) {
+  if (!activeTimeseries?.length) {
     return (
       <div style={{ textAlign: 'center', padding: '3rem 2rem', color: isDarkMode ? '#475569' : '#94a3b8', fontSize: 14 }}>
         No inundation data recorded at this location.

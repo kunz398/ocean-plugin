@@ -1,0 +1,21 @@
+/* Route forecast result cards: Recommendation / Distance / Duration / Speed.
+   Fixed 4-column desktop layout is too cramped inside a bottom sheet on
+   tablets/phones — collapse to 2 columns, then 1, as the sheet narrows. */
+.route-forecast-stats {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.85fr) repeat(3, minmax(130px, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+@media (max-width: 900px) {
+  .route-forecast-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .route-forecast-stats {
+    grid-template-columns: 1fr;
+  }
+}

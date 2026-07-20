@@ -47,7 +47,7 @@ export const MARINE_VARIABLES = {
     label: 'Mean Wave Period',
     description: 'Mean zero-crossing period of waves',
     defaultRange: { min: 0, max: 20 },
-    colorScheme: 'ylgnbu',  // Match WMS YlGnBu palette
+    colorScheme: 'spectral',
     decimalPlaces: 0,
     units: 's',
     category: 'wave',
@@ -58,7 +58,7 @@ export const MARINE_VARIABLES = {
     label: 'Peak Wave Period', 
     description: 'Wave period corresponding to the most energetic waves',
     defaultRange: { min: 0, max: 20 },  // 0-20 range - MATCHING NIUE
-    colorScheme: 'rd',  // Red scheme - MATCHING NIUE
+    colorScheme: 'magma',
     decimalPlaces: 0,
     units: 's',
     category: 'wave',

@@ -5,9 +5,24 @@
     <link rel="icon" href="https://ocean-plugin.spc.int/images/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#000000" />
+    <script>
+      // Apply the saved theme before CSS/React paint. New users start in dark
+      // mode; an explicit day/light preference remains respected.
+      (function () {
+        try {
+          var saved = localStorage.getItem('ui-theme') || localStorage.getItem('theme');
+          document.documentElement.setAttribute(
+            'data-theme',
+            saved === 'day' || saved === 'light' ? 'day' : 'dark'
+          );
+        } catch (error) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      }());
+    </script>
     <meta
       name="description"
-      content="Web site created using create-react-app"
+      content="Niue marine wave, coastal inundation and vessel suitability forecast system."
     />
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
     <!--

@@ -21,3 +21,14 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# generated terrain/imagery tile pyramids — regenerated from source data via
+# make_rarotonga_terrain_tiles.sh / retile_rarotonga_dtm_island_zooms.py, not
+# hand-authored — too large for git (multi-GB, hundreds of thousands of files)
+/public/terrain/
+/public/imagery/
+
+# browser network capture — can contain auth tokens/cookies, debug artifact only.
+# Glob (not just the literal "localhost.har") since captures get renamed per
+# session, e.g. CookIslandslocalhost.har, Niue.har.
+*.har

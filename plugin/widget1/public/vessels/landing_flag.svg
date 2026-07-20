@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 96 96">
+  <!-- Neutral-colored pin + flag: marks a place, not a hazard reading. -->
+  <path d="M48 90 C48 90 20 56 20 36 C20 20.536 32.536 8 48 8 C63.464 8 76 20.536 76 36 C76 56 48 90 48 90 Z"
+        fill="#334155" stroke="#ffffff" stroke-width="3"/>
+  <circle cx="48" cy="34" r="16" fill="#ffffff"/>
+  <path d="M40 24 L40 44 M40 25 L58 30 L40 35 Z" fill="none" stroke="#e11d48" stroke-width="2.4" stroke-linejoin="round"/>
+</svg>

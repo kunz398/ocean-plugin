@@ -48,6 +48,20 @@
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 1000;
   overflow: hidden;
+  position: relative;
+}
+
+/* Bottom fade that hints at hidden content below the visible panel area */
+.left-panel:not(.collapsed)::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 52px;
+  background: linear-gradient(to bottom, transparent, rgba(8, 20, 52, 0.82));
+  pointer-events: none;
+  z-index: 2;
 }
 
 .left-panel.collapsed {
@@ -96,9 +110,28 @@
 
 .panel-content {
   flex: 1;
-  overflow-y: auto;
+  overflow-y: scroll;
   padding: 20px;
   transition: opacity 0.3s ease;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+.panel-content::-webkit-scrollbar {
+  width: 5px;
+}
+
+.panel-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel-content::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.22);
+  border-radius: 3px;
+}
+
+.panel-content::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.45);
 }
 
 .left-panel.collapsed .panel-content {

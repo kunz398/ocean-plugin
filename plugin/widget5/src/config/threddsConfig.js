@@ -10,6 +10,9 @@ export const getThreddsBase = () => (
 
 export const getCookForecastWmsUrl = () => `${getThreddsBase()}${COK_SWAN_PATH}`;
 
+// Direct THREDDS URL (bypasses dev proxy) — used for WMS GetTimeseries
+export const getCookForecastWmsDirectUrl = () => `${THREDDS_ORIGIN}/thredds${COK_SWAN_PATH}`;
+
 export const getCookSfincsWmsUrl = () => `${getThreddsBase()}${COK_SFINCS_PATH}`;
 
 export const isProxiedThreddsUrl = (url = '') => url.startsWith(THREDDS_BASE_PATH);

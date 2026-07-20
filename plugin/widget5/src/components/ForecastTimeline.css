@@ -1,0 +1,458 @@
+/* ── Forecast Timeline ── bottom map overlay, Windy / Ventusky style ─────── */
+
+.ft-root {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 20;
+  padding: 10px 14px 8px;
+  border-radius: 14px;
+  background: rgba(6, 15, 32, 0.90);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.50),
+    0 2px 6px rgba(0, 0, 0, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  color: #e2e8f0;
+  font-family: system-ui, -apple-system, sans-serif;
+  user-select: none;
+}
+
+/* ── Stale-forecast alert chip ───────────────────────────────────────────── */
+.ft-stale-chip {
+  margin-bottom: 8px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.28);
+  color: #fde68a;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+/* ── Day marker row ──────────────────────────────────────────────────────── */
+.ft-day-row {
+  position: relative;
+  height: 30px;
+  margin: 0 6px;            /* align with slider thumb margin */
+  margin-bottom: 2px;
+}
+
+.ft-day-track {
+  position: absolute;
+  inset: 0;
+}
+
+.ft-day-marker {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  top: 0;
+}
+
+/* Pin first label to left edge so it never overflows or clips */
+.ft-day-marker:first-child {
+  transform: translateX(0);
+}
+
+/* Pin last label to right edge symmetrically */
+.ft-day-marker:last-child {
+  transform: translateX(-100%);
+}
+
+.ft-day-marker:hover .ft-day-label {
+  color: #93c5fd;
+}
+
+.ft-day-tick {
+  display: block;
+  width: 1px;
+  height: 7px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.ft-day-label {
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+  transition: color 0.15s;
+  margin-top: 2px;
+}
+
+/* ── Slider wrap ─────────────────────────────────────────────────────────── */
+.ft-slider-wrap {
+  position: relative;
+  margin-bottom: 6px;
+}
+
+/* Range input — custom styled track + thumb */
+.ft-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  accent-color: #0ea5e9; /* suppress OS-theme lime-green on Linux/GTK */
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    #0ea5e9 0%,
+    #0ea5e9 var(--ft-pct, 0%),
+    rgba(255, 255, 255, 0.15) var(--ft-pct, 0%),
+    rgba(255, 255, 255, 0.15) 100%
+  );
+  outline: none;
+  cursor: pointer;
+  display: block;
+}
+
+.ft-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #0ea5e9;
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.30), 0 2px 6px rgba(0, 0, 0, 0.40);
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.ft-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 5px rgba(14, 165, 233, 0.25), 0 2px 8px rgba(0, 0, 0, 0.40);
+}
+
+.ft-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #0ea5e9;
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.30);
+  cursor: pointer;
+}
+
+.ft-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+}
+
+.ft-slider::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.ft-slider::-moz-range-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: #0ea5e9;
+}
+
+.ft-slider:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ── Controls row ────────────────────────────────────────────────────────── */
+.ft-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Left cluster: nav buttons + speed chips */
+.ft-controls__left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ft-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ft-speed {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Centre: current valid-time readout — fills the middle gap */
+.ft-thumb-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: center;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #93c5fd;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: rgba(14, 165, 233, 0.10);
+  border: 1px solid rgba(14, 165, 233, 0.22);
+  border-radius: 6px;
+  padding: 3px 10px;
+}
+
+.ft-tz {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.ft-group-label {
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin-right: 2px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* ── Shared button base ─────────────────────────────────────────────────── */
+.ft-btn {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  color: #cbd5e1;
+  border-radius: 7px;
+  padding: 4px 10px;
+  font-size: 0.78rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.08s;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.ft-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  color: #f1f5f9;
+  border-color: rgba(255, 255, 255, 0.20);
+}
+
+.ft-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.ft-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Nav buttons (Prev / Next) */
+.ft-nav-btn {
+  font-size: 0.76rem;
+  padding: 4px 9px;
+}
+
+/* Play / Pause button — wider, accent colour when active */
+.ft-play-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  background: rgba(14, 165, 233, 0.18);
+  border-color: rgba(14, 165, 233, 0.35);
+  color: #93c5fd;
+  min-width: 82px;
+  justify-content: center;
+}
+
+.ft-play-btn:hover:not(:disabled) {
+  background: rgba(14, 165, 233, 0.30);
+  border-color: rgba(14, 165, 233, 0.55);
+  color: #e0f2fe;
+}
+
+.ft-play-btn--active {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.40);
+  color: #fca5a5;
+}
+
+.ft-play-btn--active:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.28);
+  border-color: rgba(239, 68, 68, 0.60);
+  color: #fee2e2;
+}
+
+.ft-play-icon {
+  font-size: 0.72rem;
+  letter-spacing: 0;
+}
+
+/* Chip buttons (speed / timezone) */
+.ft-chip {
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  border-radius: 5px;
+}
+
+.ft-chip--active {
+  background: rgba(14, 165, 233, 0.30);
+  border-color: rgba(14, 165, 233, 0.55);
+  color: #93c5fd;
+  font-weight: 600;
+}
+
+.ft-chip--active:hover:not(:disabled) {
+  background: rgba(14, 165, 233, 0.40);
+}
+
+/* ── Inline panel variant (shown inside controls sidebar) ───────────────── */
+.ft-root--inline {
+  position: static;
+  left: unset;
+  right: unset;
+  bottom: unset;
+  z-index: unset;
+  border-radius: 8px;
+  margin-top: 8px;
+  padding: 8px 10px 6px;
+  background: rgba(6, 15, 32, 0.70);
+  box-shadow: none;
+}
+
+/* Day row is too cramped at panel width — collapse to ticks only */
+.ft-root--inline .ft-day-row {
+  height: 10px;
+  margin-bottom: 4px;
+}
+
+.ft-root--inline .ft-day-label {
+  display: none;
+}
+
+.ft-root--inline .ft-day-tick {
+  height: 5px;
+}
+
+/* Stack controls vertically to fit the narrow panel */
+.ft-root--inline .ft-controls {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.ft-root--inline .ft-controls__left {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Current time label spans full width when stacked */
+.ft-root--inline .ft-thumb-label {
+  flex: none;
+  text-align: center;
+}
+
+/* Timezone row sits on its own line */
+.ft-root--inline .ft-tz {
+  justify-content: center;
+}
+
+/* ── Light mode overrides ────────────────────────────────────────────────── */
+body:not(.dark-mode) .ft-root {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.10);
+  color: #1e293b;
+}
+
+body:not(.dark-mode) .ft-day-label {
+  color: rgba(0, 0, 0, 0.45);
+}
+
+body:not(.dark-mode) .ft-day-tick {
+  background: rgba(0, 0, 0, 0.18);
+}
+
+body:not(.dark-mode) .ft-thumb-label {
+  color: #1d4ed8;
+  background: rgba(14, 165, 233, 0.07);
+  border-color: rgba(14, 165, 233, 0.20);
+}
+
+body:not(.dark-mode) .ft-btn {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #334155;
+}
+
+body:not(.dark-mode) .ft-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.10);
+  color: #0f172a;
+}
+
+body:not(.dark-mode) .ft-play-btn {
+  background: rgba(14, 165, 233, 0.10);
+  border-color: rgba(14, 165, 233, 0.30);
+  color: #1d4ed8;
+}
+
+body:not(.dark-mode) .ft-root--inline {
+  background: rgba(240, 249, 255, 0.85);
+}
+
+/* ── Sidebar pin button ──────────────────────────────────────────────────── */
+.ft-pin-btn {
+  flex-shrink: 0;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.2rem 0.45rem;
+  opacity: 0.55;
+  border-color: transparent;
+  background: transparent;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.ft-pin-btn:hover {
+  opacity: 1;
+  background: rgba(14, 165, 233, 0.15);
+  border-color: rgba(14, 165, 233, 0.35);
+}
+
+.ft-pin-btn--active {
+  opacity: 1;
+  color: #38bdf8;
+  background: rgba(14, 165, 233, 0.18);
+  border-color: rgba(14, 165, 233, 0.45);
+}
+
+body:not(.dark-mode) .ft-group-label {
+  color: rgba(0, 0, 0, 0.35);
+}
+
+body:not(.dark-mode) .ft-stale-chip {
+  color: #92400e;
+  background: rgba(234, 179, 8, 0.10);
+  border-color: rgba(234, 179, 8, 0.30);
+}
+
+/* ── Responsive: hide day labels on narrow map ───────────────────────────── */
+@media (max-width: 520px) {
+  .ft-day-label { display: none; }
+  .ft-day-row { height: 14px; }
+  .ft-group-label { display: none; }
+}

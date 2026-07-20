@@ -1,19 +1,21 @@
-import React, { useEffect, useState } from 'react';
+import React, { lazy, Suspense, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import Home from './pages/Home';
 import './App.css';
+import ErrorBoundary from './components/ErrorBoundary';
 // LEGACY HEADER REMOVED - ModernHeader is now used in Home.jsx
 // import Header from './components/header';
-import TokenError from './components/TokenError';
-import { validateTokenOnLoad, extractTokenFromURL } from './utils/tokenValidator';
+
+// Lazy-load the heavy map/forecast page so MapLibre GL, deck.gl, zarr, and
+// Plotly are excluded from the initial JS bundle.
+const Home = lazy(() => import('./pages/Home'));
 
 function App() {
   // AUTHENTICATION COMMENTED OUT
   // const [isAuthenticated, setIsAuthenticated] = useState(false);
   // const [isLoading, setIsLoading] = useState(true);
   // const [errorType, setErrorType] = useState(null);
-  const [widgetData, setWidgetData] = useState(null);
-  const [validCountries, setValidCountries] = useState([]);
+  const [widgetData] = useState(null);
+  const [validCountries] = useState([]);
 
   // AUTHENTICATION COMMENTED OUT - App now loads without token validation
   // useEffect(() => {
@@ -117,14 +119,22 @@ function App() {
         transition: 'background-color 0.3s ease'
       }}>
         {/* Legacy Header removed - ModernHeader now renders in Home.jsx */}
-        <Routes>
-          <Route path="/" element={<Home widgetData={widgetData} validCountries={validCountries} />} />
-          {/* <Route path="/link1" element={<Link1 />} />
-          <Route path="/link2" element={<Link2 />} />
-          <Route path="/link3" element={<Link3 />} /> */}
-          {/* Redirect any unknown routes to home */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        {/* fallback={null}: the HTML splash screen in index.html stays visible
+            until the lazy chunk resolves and React renders the real content. */}
+        <Suspense fallback={null}>
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <ErrorBoundary>
+                  <Home widgetData={widgetData} validCountries={validCountries} />
+                </ErrorBoundary>
+              }
+            />
+            {/* Redirect any unknown routes to home */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </div>
     </Router>
   );

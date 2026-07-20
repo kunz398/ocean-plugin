@@ -84,7 +84,9 @@ function parseLabelConfig(label) {
 // Variables & labels with config strings
 const variableDefs = [
   { key: "hs", label: "Wave{0-5/Bu/1}" },
+  { key: "tm02", label: "Mean Period{0-20/Rd/0}" },
   { key: "tpeak", label: "Wave Period{0-20/Rd/0}" },
+  { key: "dirm", label: "Mean wave direction{0/dir}" },
   { key: "dirp", label: "Wave direction{0/dir}" },
   { key: "transp_x", label: "Wave Energy{calc/0-100/jet/0}" },
   { key: "hs_p2", label: "Swell(m){0-5/Bu/1}" },
@@ -110,8 +112,10 @@ function extractCoverageTimeseries(json, variable) {
     !json.ranges[variable].values
   )
     return null;
-  const times = json.domain.axes.t.values;
-  const values = json.ranges[variable].values;
+  const rawTimes = json.domain.axes.t.values;
+  const rawValues = json.ranges[variable].values;
+  const times = Array.isArray(rawTimes) ? rawTimes : Array.from(rawTimes);
+  const values = Array.isArray(rawValues) ? rawValues : Array.from(rawValues);
   return { times, values };
 }
 function calculateWaveEnergyKw(xValues = [], yValues = []) {
@@ -188,7 +192,8 @@ function Tabular({ perVariableData }) {
   // Check for dark mode
   useEffect(() => {
     const checkTheme = () => {
-      const isDark = document.body.classList.contains('dark-mode');
+      const theme = document.documentElement.getAttribute('data-theme');
+      const isDark = theme === 'dark' || document.body.classList.contains('dark-mode');
       setIsDarkMode(isDark);
     };
     
@@ -196,7 +201,7 @@ function Tabular({ perVariableData }) {
     
     // Listen for theme changes
     const observer = new MutationObserver(checkTheme);
-    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
     
     return () => observer.disconnect();
   }, []);
@@ -206,8 +211,12 @@ function Tabular({ perVariableData }) {
     let timesArr = [];
     let transpX = [];
     let transpY = [];
-    for (let j = 0; j < variableDefs.length; j++) {
-      const { key, label } = variableDefs[j];
+    const defs = perVariableData?.depth
+      ? [{ key: "depth", label: "Inundation Depth{0-4/Bu/2}" }]
+      : variableDefs;
+
+    for (let j = 0; j < defs.length; j++) {
+      const { key, label } = defs[j];
       const config = parseLabelConfig(label);
       if (key === "transp_x") {
         const tsX = extractCoverageTimeseries(perVariableData["transp_x"], "transp_x");

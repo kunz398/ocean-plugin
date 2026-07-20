@@ -39,6 +39,23 @@ export const isRasterSourceLayer = (layerConfig) =>
 
 // Layer bounds for auto-zoom functionality
 export const LAYER_BOUNDS = {
+  // Zarr-based layers (new)
+  'sfincs-inundation': {
+    southWest: [-21.282, -159.838],
+    northEast: [-21.191, -159.717],
+  },
+  'swan-rarotonga': {
+    southWest: [-21.9, -163.0],
+    northEast: [-8.9, -156.0],
+  },
+  'mean-wave-period': {
+    southWest: [-21.9, -163.0],
+    northEast: [-8.9, -156.0],
+  },
+  'peak-wave-period': {
+    southWest: [-21.9, -163.0],
+    northEast: [-8.9, -156.0],
+  },
   // Rarotonga SFINCS inundation layer bounds (THREDDS - actual data extent from GetCapabilities)
   'hmax': {
     southWest: [-21.281671213355985, -159.83717346191406],

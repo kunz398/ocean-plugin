@@ -26,32 +26,37 @@ export const ControlGroup = ({
 /**
  * Variable Selection Buttons with Fancy Icons
  */
-export const VariableButtons = ({ 
-  layers, 
-  selectedValue, 
-  onVariableChange, 
+export const VariableButtons = ({
+  layers,
+  selectedValue,
+  onVariableChange,
   labelMap = {},
   ariaLabel = "Select forecast variable",
-  getVariableIcon = null
+  getVariableIcon = null,
+  getVariableColor = null,
 }) => {
   const getShortLabel = (label) => labelMap[label] || label;
-  
+
   return (
     <div className="variable-buttons" role="radiogroup" aria-label={ariaLabel}>
-      {layers.map((layer) => (
-        <button
-          type="button"
-          key={layer.value}
-          className={`var-btn ${selectedValue === layer.value ? 'active' : ''}`}
-          onClick={() => onVariableChange(layer.value)}
-          role="radio"
-          aria-checked={selectedValue === layer.value}
-          aria-label={`${getShortLabel(layer.label)} forecast variable`}
-        >
-          {getVariableIcon && getVariableIcon(layer)}
-          {getShortLabel(layer.label)}
-        </button>
-      ))}
+      {layers.map((layer) => {
+        const color = getVariableColor ? getVariableColor(layer) : null;
+        return (
+          <button
+            type="button"
+            key={layer.value}
+            className={`var-btn ${selectedValue === layer.value ? 'active' : ''}`}
+            onClick={() => onVariableChange(layer.value)}
+            role="radio"
+            aria-checked={selectedValue === layer.value}
+            aria-label={`${getShortLabel(layer.label)} forecast variable`}
+            style={color ? { '--var-color': color } : undefined}
+          >
+            {getVariableIcon && getVariableIcon(layer)}
+            {getShortLabel(layer.label)}
+          </button>
+        );
+      })}
     </div>
   );
 };
@@ -215,7 +220,6 @@ export const IslandZoomControl = ({
   islands,
   selectedIsland,
   onIslandChange,
-  onZoomToIsland,
   disabled = false
 }) => {
   const groupedIslands = islands.reduce((groups, island) => {
@@ -230,37 +234,25 @@ export const IslandZoomControl = ({
   return (
     <div className="island-zoom-control">
       <label htmlFor="island-zoom-select">Island</label>
-      <div className="island-zoom-row">
-        <select
-          id="island-zoom-select"
-          className="island-zoom-select"
-          value={selectedIsland}
-          onChange={(event) => onIslandChange(event.target.value)}
-          disabled={disabled}
-          aria-label="Select island to zoom to"
-          title="Select island to zoom to"
-        >
-          {Object.entries(groupedIslands).map(([group, groupIslands]) => (
-            <optgroup key={group} label={group}>
-              {groupIslands.map((island) => (
-                <option key={island.id} value={island.id}>
-                  {island.label}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="island-zoom-btn"
-          onClick={onZoomToIsland}
-          disabled={disabled || !selectedIsland}
-          aria-label="Zoom to selected island"
-          title="Zoom to selected island"
-        >
-          Zoom
-        </button>
-      </div>
+      <select
+        id="island-zoom-select"
+        className="island-zoom-select island-zoom-select--full"
+        value={selectedIsland}
+        onChange={(e) => onIslandChange(e.target.value)}
+        disabled={disabled}
+        aria-label="Select island to fly to"
+        title="Select island to fly to"
+      >
+        {Object.entries(groupedIslands).map(([group, groupIslands]) => (
+          <optgroup key={group} label={group}>
+            {groupIslands.map((island) => (
+              <option key={island.id} value={island.id}>
+                {island.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
     </div>
   );
 };

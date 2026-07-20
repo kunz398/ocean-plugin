@@ -1,72 +1,29 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './ForecastApp.css';
 import '../styles/MapMarker.css';
-import useMapInteraction from '../hooks/useMapInteraction';
 import { UI_CONFIG } from '../config/UIConfig';
-import { MARINE_CONFIG } from '../config/marineVariables';
 import { getLayerBounds, isRasterSourceLayer } from '../config/layerConfig';
 import { ISLAND_ZOOM_TARGETS, findIslandZoomTarget } from '../config/islandConfig';
 import CompassRose from './CompassRose';
-import { 
-  ControlGroup, 
-  VariableButtons, 
-  TimeControl, 
-  OpacityControl, 
+import BasemapSwitcher from './BasemapSwitcher';
+import ForecastTimeline from './ForecastTimeline';
+import {
+  ControlGroup,
+  VariableButtons,
+  OpacityControl,
   IslandZoomControl,
-  DataInfo, 
-  //StatusBar 
+  DataInfo,
 } from './shared/UIComponents';
-import { Waves, Wind, Navigation, Activity, Info, Settings, Timer, Triangle, BadgeInfo, CloudRain, FastForward, MapPin, SlidersHorizontal } from 'lucide-react';
+import { Waves, Wind, Navigation, Activity, Info, Settings, Timer, Triangle, CloudRain, MapPin, SlidersHorizontal, BarChart2 } from 'lucide-react';
 import FancyIcon from './FancyIcon';
 import '../styles/fancyIcons.css';
 import InundationThresholdEditor from './InundationThresholdEditor';
-import { X_SST_GRADIENT, buildInundationLegendBands, parseLegendColorRange } from '../domain/inundation/legendBands';
+import InundationWindowControl from './InundationWindowControl';
+import { X_SST_GRADIENT, buildInundationLegendBands, buildBreakLegendConfig, parseLegendColorRange } from '../domain/inundation/legendBands';
+import { getColormap } from '../lib/colormaps';
 
-// Spectral divergent palette for mean wave period (div-Spectral from ColorBrewer)
-const SPECTRAL_GRADIENT_RGB = [
-  [158, 1, 66],      // Dark red
-  [213, 62, 79],     // Red
-  [244, 109, 67],    // Orange-red
-  [253, 174, 97],    // Orange
-  [254, 224, 139],   // Yellow-orange
-  [255, 255, 191],   // Pale yellow
-  [230, 245, 152],   // Yellow-green
-  [171, 221, 164],   // Light green
-  [102, 194, 165],   // Cyan-green
-  [50, 136, 189],    // Blue
-  [94, 79, 162]      // Purple
-];
 
-// Generate gradient bands for any palette
-const generateGradientBands = (paletteRGB, bands = 250) => {
-  const colors = [];
-  for (let i = 0; i < bands; i++) {
-    const normalized = i / (bands - 1);
-    const maxIndex = paletteRGB.length - 1;
-    const index = normalized * maxIndex;
-    const lowerIndex = Math.floor(index);
-    const upperIndex = Math.min(Math.ceil(index), maxIndex);
-    const fraction = index - lowerIndex;
-    
-    const lower = paletteRGB[lowerIndex];
-    const upper = paletteRGB[upperIndex];
-    
-    const r = Math.round(lower[0] + (upper[0] - lower[0]) * fraction);
-    const g = Math.round(lower[1] + (upper[1] - lower[1]) * fraction);
-    const b = Math.round(lower[2] + (upper[2] - lower[2]) * fraction);
-    
-    colors.push(`rgb(${r}, ${g}, ${b})`);
-  }
-  return colors;
-};
-
-const SPECTRAL_250_BANDS = generateGradientBands(SPECTRAL_GRADIENT_RGB, 250);
-
-const SPECTRAL_GRADIENT = `linear-gradient(to top, ${SPECTRAL_250_BANDS.map((color, i) => 
-  `${color} ${(i / (SPECTRAL_250_BANDS.length - 1) * 100).toFixed(2)}%`
-).join(', ')})`;
-
-const ForecastApp = ({ 
+const ForecastApp = ({
   WAVE_FORECAST_LAYERS,
   ALL_LAYERS,
   selectedWaveForecast,
@@ -78,189 +35,121 @@ const ForecastApp = ({
   totalSteps,
   isPlaying,
   setIsPlaying,
+  playSpeedMs = 700,
+  setPlaySpeedMs,
   currentSliderDate,
   capTime,
+  overlayStats,
   activeLayers,
   setActiveLayers,
   mapRef,
   mapInstance,
-  setBottomCanvasData,
-  setShowBottomCanvas,
+  setBasemap,
   isUpdatingVisualization,
   currentSliderDateStr,
-  minIndex,
-  isBuffering,
+  minIndex = 0,
   inundationThresholds,
+  rangeWindow,
+  setRangeWindow,
+  fitBounds,       // (islandBounds) → map.fitBounds with coord conversion — from useZarrMap
+  setShowContours,
+  // Unused while the Terrain/Aerial imagery toggles and Flood display's
+  // terrain-aware warning banner are commented out below (moved to
+  // advanced-features branch).
+  // eslint-disable-next-line no-unused-vars
+  terrainEnabled = false,
+  // eslint-disable-next-line no-unused-vars
+  setTerrainEnabled,
+  terrainConfig,
+  // eslint-disable-next-line no-unused-vars
+  showOrtho2018 = true,
+  // eslint-disable-next-line no-unused-vars
+  setShowOrtho2018,
+  // Unused while the Flood display (2D/3D) toggle is commented out below
+  // (moved to advanced-features branch).
+  // eslint-disable-next-line no-unused-vars
+  floodDisplayMode = '2d',
+  // eslint-disable-next-line no-unused-vars
+  setFloodDisplayMode,
+  flood3DConfig,
+  // eslint-disable-next-line no-unused-vars
+  flood3dElevScale = 6,
+  // eslint-disable-next-line no-unused-vars
+  setFlood3dElevScale,
 }) => {
   const lastZoomedLayerRef = useRef(null);
   const [selectedIslandId, setSelectedIslandId] = useState(ISLAND_ZOOM_TARGETS[0]?.id || '');
   const [showThresholdEditor, setShowThresholdEditor] = useState(false);
+  const [showTimelineInPanel, setShowTimelineInPanel] = useState(false);
+  const [contoursEnabled, setContoursEnabled] = useState(false);
   const [timeDisplayZone, setTimeDisplayZone] = useState('Pacific/Rarotonga');
   const selectedLayer = useMemo(() => {
     return ALL_LAYERS.find(l => l.value === selectedWaveForecast) || null;
   }, [ALL_LAYERS, selectedWaveForecast]);
   const isRasterInundation = isRasterSourceLayer(selectedLayer);
+  // Unused while the Terrain toggle is commented out below (moved to
+  // advanced-features branch).
+  // eslint-disable-next-line no-unused-vars
+  const terrainAvailable = Array.isArray(terrainConfig?.tiles) && terrainConfig.tiles.some(Boolean);
+  // Unused while the Flood display toggle is commented out below (moved to
+  // advanced-features branch).
+  // eslint-disable-next-line no-unused-vars
+  const flood3DAvailable = Boolean(flood3DConfig?.available);
 
   const zoomToLayerBounds = useCallback((layerValue, { force = false } = {}) => {
-    if (!layerValue || !mapInstance?.current) {
-      return;
-    }
+    if (!layerValue) return;
     const layerBounds = getLayerBounds(layerValue);
-    if (!layerBounds) {
-      return;
-    }
-    if (!force && lastZoomedLayerRef.current === layerValue) {
-      return;
-    }
+    if (!layerBounds) return;
+    if (!force && lastZoomedLayerRef.current === layerValue) return;
 
-    const map = mapInstance.current;
-    // Check if this is a static inundation layer that requires higher zoom level
     const layer = ALL_LAYERS.find(l => l.value === layerValue);
-    const isInundation = layer?.isStatic || false;
-    
-    map.fitBounds(
-      [
-        layerBounds.southWest,
-        layerBounds.northEast
-      ],
-      {
-        padding: [20, 20],
-        maxZoom: isInundation ? 17 : 14, // Higher zoom for inundation layers (increased from 16 to 17)
-        animate: true
-      }
-    );
+    const isInundation = layer?.isStatic || layer?.sourceType === 'zarr' || false;
+    const maxZoom = isInundation ? 17 : 14;
+
+    if (fitBounds) {
+      fitBounds(layerBounds, { padding: 20, maxZoom, animate: true });
+    } else if (mapInstance?.current) {
+      const map = mapInstance.current;
+      const sw = layerBounds.southWest;
+      const ne = layerBounds.northEast;
+      map.fitBounds([[sw[1], sw[0]], [ne[1], ne[0]]], { padding: 20, maxZoom, animate: true });
+    }
     lastZoomedLayerRef.current = layerValue;
-    console.log('🏝️ Zoomed to layer bounds for:', layerValue, isInundation ? '(Inundation - higher zoom)' : '');
-  }, [mapInstance, ALL_LAYERS]);
+  }, [mapInstance, ALL_LAYERS, fitBounds]);
 
   const zoomToIsland = useCallback((islandId = selectedIslandId) => {
     const island = findIslandZoomTarget(islandId);
-    const map = mapInstance?.current;
-    if (!island || !map) {
-      return;
-    }
-
+    if (!island) return;
     setActiveLayers(prev => ({ ...prev, riskPoints: true }));
-    map.fitBounds(
-      [
-        island.bounds.southWest,
-        island.bounds.northEast
-      ],
-      {
-        padding: [42, 42],
-        maxZoom: 12,
-        animate: true
-      }
-    );
-  }, [mapInstance, selectedIslandId, setActiveLayers]);
+    if (fitBounds) {
+      fitBounds(island.bounds, { padding: 42, maxZoom: 12 });
+    } else if (mapInstance?.current) {
+      const { southWest: sw, northEast: ne } = island.bounds;
+      mapInstance.current.fitBounds([[sw[1], sw[0]], [ne[1], ne[0]]], { padding: 42, maxZoom: 12, animate: true });
+    }
+  }, [mapInstance, selectedIslandId, setActiveLayers, fitBounds]);
 
   const zoomToRarotonga = useCallback(() => {
-    const map = mapInstance?.current;
     const rarotonga = findIslandZoomTarget('rarotonga');
-    if (!map || !rarotonga) {
-      return;
+    if (!rarotonga) return;
+    if (fitBounds) {
+      fitBounds(rarotonga.bounds, { padding: 20, maxZoom: 17 });
+    } else if (mapInstance?.current) {
+      const { southWest: sw, northEast: ne } = rarotonga.bounds;
+      mapInstance.current.fitBounds([[sw[1], sw[0]], [ne[1], ne[0]]], { padding: 20, maxZoom: 17, animate: true });
     }
-
-    map.fitBounds(
-      [
-        rarotonga.bounds.southWest,
-        rarotonga.bounds.northEast
-      ],
-      {
-        padding: [20, 20],
-        maxZoom: 17,
-        animate: true
-      }
-    );
-  }, [mapInstance]);
+  }, [mapInstance, fitBounds]);
 
   useEffect(() => {
     zoomToLayerBounds(selectedWaveForecast);
   }, [selectedWaveForecast, zoomToLayerBounds]);
 
-  // Dynamic marine legend configuration - RESPONDS TO ACTUAL DATA
-  const getLegendConfig = (variable, layerData) => {
-    const varLower = variable.toLowerCase();
-    
-    // Parse dynamic ranges from layer data
-    const colorRange = layerData ? parseLegendColorRange(layerData.colorscalerange) : null;
-    const dynamicMax = layerData?.activeBeaufortMax;
-    
-    if (varLower.includes('hs')) {
-      // DYNAMIC DATA RANGE - Updates with actual wave height data
-      // Using X-SST gradient to match WMS layer (default-scalar/x-Sst palette)
-      const minVal = colorRange?.min ?? 0;
-      const maxVal = Number.isFinite(dynamicMax) ? dynamicMax : (colorRange?.max ?? 4);
-      const tickCount = 5;
-      const ticks = Array.from({length: tickCount}, (_, i) => 
-        Number((minVal + (maxVal - minVal) * i / (tickCount - 1)).toFixed(1))
-      );
-      
-      return {
-        // X-SST gradient - matches the WMS palette used by the wave height layer
-        gradient: X_SST_GRADIENT,
-        min: minVal,
-        max: maxVal,
-        units: 'm',
-        ticks: ticks
-      };
-    }
-    
-    if (varLower.includes('tm02')) {
-      // DYNAMIC DATA RANGE - Updates with actual mean period data
-      // Using Spectral divergent palette to match WMS layer (div-Spectral)
-      const minVal = colorRange?.min ?? 0;
-      const maxVal = colorRange?.max ?? 20;
-      const ticks = [minVal, maxVal * 0.25, maxVal * 0.5, maxVal * 0.75, maxVal].map(v => Number(v.toFixed(1)));
-      
-      return {
-        gradient: SPECTRAL_GRADIENT,
-        min: minVal,
-        max: maxVal,
-        units: 's',
-        ticks: ticks
-      };
-    }
-    
-    if (varLower.includes('tpeak')) {
-      // DYNAMIC DATA RANGE - Updates with actual peak period data
-      const minVal = colorRange?.min ?? 10.0;
-      const maxVal = colorRange?.max ?? 13.7;
-      const range = maxVal - minVal;
-      const ticks = Array.from({length: 5}, (_, i) => 
-        Number((minVal + range * i / 4).toFixed(1))
-      );
-      
-      return {
-        gradient: 'linear-gradient(to top, rgb(0, 0, 4), rgb(40, 11, 84), rgb(101, 21, 110), rgb(159, 42, 99), rgb(212, 72, 66), rgb(245, 125, 32), rgb(252, 194, 84), rgb(252, 253, 191))',
-        min: minVal,
-        max: maxVal,
-        units: 's',
-        ticks: ticks
-      };
-    }
-    
-    if (varLower.includes('inun') || varLower.includes('hmax') || varLower.includes('h_max')) {
-      // Use the memoized bands — computed with lastValidCategories as an explicit dep.
-      return {
-        units: 'm',
-        ...inundationLegendBands,
-      };
-    }
-    
-    if (varLower.includes('dirm')) {
-      // Wave direction - Static compass (doesn't change with data)
-      return {
-        gradient: 'conic-gradient(from 0deg, transparent)',
-        min: 0,
-        max: 360,
-        units: '°',
-        ticks: [0, 90, 180, 270, 360]
-      };
-    }
-    
-    return null;
-  };
+  // Reset contour toggle when layer changes so UI state matches the new overlay.
+  useEffect(() => {
+    const defaultEnabled = selectedLayer?.contours?.visibleByDefault ?? false;
+    setContoursEnabled(defaultEnabled);
+    setShowContours?.(defaultEnabled);
+  }, [selectedLayer?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedLegendLayer = useMemo(() => {
     if (!selectedWaveForecast) return null;
@@ -320,6 +209,74 @@ const ForecastApp = ({
     });
   }, [inundationThresholds.lastValidCategories, inundationThresholds.minVisibleDepth, selectedLegendLayer]);
 
+  const activeOverlayRange = useMemo(() => {
+    if (!overlayStats || overlayStats.layerId !== selectedWaveForecast) return null;
+    const min = Number(overlayStats.colorMin);
+    const max = Number(overlayStats.colorMax);
+    if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) return null;
+    return { min, max, units: overlayStats.units };
+  }, [overlayStats, selectedWaveForecast]);
+
+  // Dynamic marine legend configuration - RESPONDS TO ACTUAL DATA
+  const getLegendConfig = (variable, layerData) => {
+    const varLower = variable.toLowerCase();
+
+    // Inundation must always reflect the live, user-editable threshold profile —
+    // layerData.colorBreaks below is just the seeded config default, and checking
+    // it first (as the generic branch does) permanently shadowed edited thresholds.
+    if (varLower.includes('inun') || varLower.includes('hmax') || varLower.includes('h_max')) {
+      return {
+        units: 'm',
+        ...inundationLegendBands,
+      };
+    }
+
+    // Parse dynamic ranges from layer data
+    const colorRange = layerData ? parseLegendColorRange(layerData.colorscalerange) : null;
+    const dynamicMax = layerData?.activeBeaufortMax;
+
+    // Any layer that has colorBreaks configured uses buildBreakLegendConfig so the
+    // legend colormap always matches the map renderer — single source of truth.
+    if (layerData?.colorBreaks?.length > 1) {
+      return buildBreakLegendConfig({
+        colorBreaks: layerData.colorBreaks,
+        colorLabels: layerData.colorLabels,
+        colorRange: { min: layerData.colorRange?.min ?? 0, max: layerData.colorRange?.max ?? 5 },
+        units: layerData.units ?? '',
+        colormapFn: getColormap(layerData.colormap),
+      });
+    }
+
+    // ── per-variable fallbacks for layers without colorBreaks ──────────────────
+    if (varLower.includes('hs')) {
+      const minVal = activeOverlayRange?.min ?? colorRange?.min ?? 0;
+      const maxVal = activeOverlayRange?.max ?? (Number.isFinite(dynamicMax) ? dynamicMax : (colorRange?.max ?? 4));
+      const ticks = Array.from({length: 5}, (_, i) =>
+        Number((minVal + (maxVal - minVal) * i / 4).toFixed(1))
+      );
+      return {
+        gradient: X_SST_GRADIENT,
+        min: minVal,
+        max: maxVal,
+        units: activeOverlayRange?.units ?? 'm',
+        ticks,
+      };
+    }
+
+    if (varLower.includes('dirm')) {
+      // Wave direction - Static compass (doesn't change with data)
+      return {
+        gradient: 'conic-gradient(from 0deg, transparent)',
+        min: 0,
+        max: 360,
+        units: '°',
+        ticks: [0, 90, 180, 270, 360]
+      };
+    }
+    
+    return null;
+  };
+
   // Function to get fancy icons for different variable types
   const getVariableIcon = (layer) => {
     const value = layer.value?.toLowerCase() || '';
@@ -348,8 +305,17 @@ const ForecastApp = ({
     return <FancyIcon icon={Activity} animationType="pulse" size={14} color="#607d8b" style={{ marginRight: '8px' }} />;
   };
 
-  // Effect to handle initial composite layer selection.
-
+  const getVariableColor = (layer) => {
+    const value = layer.value?.toLowerCase() || '';
+    const label = layer.label?.toLowerCase() || '';
+    if (value.includes('hs') || label.includes('wave height')) return '#00bcd4';
+    if (value.includes('tm02') || (label.includes('mean') && label.includes('period'))) return '#00d4ff';
+    if (value.includes('tpeak') || (label.includes('peak') && label.includes('period'))) return '#00d4ff';
+    if (value.includes('dirm') || label.includes('direction')) return '#9c27b0';
+    if (value.includes('inun') || label.includes('inundation')) return '#2196f3';
+    if (value.includes('wind') || label.includes('wind')) return '#795548';
+    return '#00d4ff';
+  };
 
   const handleVariableChange = (layerValue) => {
     setSelectedWaveForecast(layerValue);
@@ -357,8 +323,15 @@ const ForecastApp = ({
 
     const nextLayer = ALL_LAYERS.find((layer) => layer.value === layerValue);
     if (isRasterSourceLayer(nextLayer)) {
+      setSelectedIslandId('rarotonga');
       zoomToRarotonga();
       return;
+    }
+
+    // Reset range-window mode when leaving the inundation layer so the shared
+    // rangeWindow state doesn't disable the time slider on wave layers.
+    if (rangeWindow?.mode && rangeWindow.mode !== 'single') {
+      setRangeWindow({ mode: 'single' });
     }
 
     zoomToLayerBounds(layerValue, { force: true });
@@ -380,42 +353,18 @@ const ForecastApp = ({
     setSliderIndex(prev => Math.min(prev + 1, totalSteps));
   };
 
-  const formatDateTime = (date) => {
-    if (!date) return 'Loading...';
-    const timeZoneLabel = timeDisplayZone === 'UTC' ? 'UTC' : 'CKT';
-    const formattedDate = new Intl.DateTimeFormat('en-GB', {
-      timeZone: timeDisplayZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }).format(date);
-
-    return `${formattedDate} ${timeZoneLabel}`;
-  };
-
-  // Clean map interaction using service-based architecture
-  // Enhanced: passes selectedWaveForecast to show popup for inundation layer
-  useMapInteraction({
-    mapInstance,
-    currentSliderDate,
-    sliderIndex,
-    setBottomCanvasData,
-    setShowBottomCanvas,
-    selectedWaveForecast,
-    selectedLayerConfig: selectedLayer,
-    inundationCategories: inundationThresholds.lastValidCategories,
-    debugMode: true
-  });
-
   return (
     <div className="forecast-app">
       <div className="main-container">
         <div className="map-section">
           <div ref={mapRef} id="map" className="forecast-map"></div>
-          
+
+          <BasemapSwitcher
+            mapInstance={mapInstance}
+            setBasemap={setBasemap}
+            position="top-left"
+          />
+
           {/* Enhanced Professional Compass Rose */}
           <CompassRose 
             position="top-right" 
@@ -427,14 +376,39 @@ const ForecastApp = ({
           {selectedLegendLayer && (
             <div className="marine-legend">
               {(() => {
-                const legendConfig = getLegendConfig(selectedLegendLayer.value, selectedLegendLayer);
+                const legendConfig = getLegendConfig(selectedLegendLayer.variable ?? selectedLegendLayer.value, selectedLegendLayer);
                 if (!legendConfig) return null;
                 const range = legendConfig.max - legendConfig.min;
                 const toPos = (val) => range > 0 ? ((legendConfig.max - val) / range) * 100 : 0;
 
+                const legendInfoText = [
+                  selectedLegendLayer.legendNote,
+                  selectedLegendLayer.showDirectionArrows ? selectedLegendLayer.arrowLegendLabel : null,
+                ].filter(Boolean).join(' ');
+
                 return (
                   <>
-                    <div className="marine-legend-title">{selectedLegendLayer.label}</div>
+                    <div className="marine-legend-title">
+                      {selectedLegendLayer.label}
+                      {legendInfoText && (
+                        <span className="marine-legend-info" aria-label={legendInfoText}>
+                          ⓘ
+                          <span className="marine-legend-info__tooltip">{legendInfoText}</span>
+                        </span>
+                      )}
+                    </div>
+                    {selectedLegendLayer.contours?.levels?.length > 0 && (
+                      <button
+                        className={`marine-legend-toggle${contoursEnabled ? ' marine-legend-toggle--active' : ''}`}
+                        onClick={() => {
+                          const next = !contoursEnabled;
+                          setContoursEnabled(next);
+                          setShowContours?.(next);
+                        }}
+                      >
+                        {contoursEnabled ? 'Contours on' : 'Contours off'}
+                      </button>
+                    )}
                     <div className="marine-legend-content">
 
                       {/* Gradient bar — with threshold boundary hairlines overlaid when available */}
@@ -496,6 +470,26 @@ const ForecastApp = ({
             </div>
           )}
 
+          {/* Bottom timeline overlay — always visible, drives all forecast layers */}
+          <ForecastTimeline
+            sliderIndex={sliderIndex}
+            totalSteps={totalSteps}
+            minIndex={minIndex}
+            currentSliderDate={currentSliderDate}
+            capTime={capTime}
+            isPlaying={isPlaying}
+            playSpeedMs={playSpeedMs}
+            timeDisplayZone={timeDisplayZone}
+            disabled={selectedLayer?.isStatic || (isRasterInundation && rangeWindow?.mode && rangeWindow.mode !== 'single')}
+            onTimeIndexChange={handleSliderChange}
+            onPlayPause={handlePlayToggle}
+            onPrevious={handlePreviousTimestamp}
+            onNext={handleNextTimestamp}
+            onSpeedChange={setPlaySpeedMs}
+            onTimezoneChange={setTimeDisplayZone}
+            showInPanel={showTimelineInPanel}
+            onTogglePanel={() => setShowTimelineInPanel(v => !v)}
+          />
         </div>
 
         <div className="controls-panel">
@@ -512,35 +506,54 @@ const ForecastApp = ({
             labelMap={UI_CONFIG.VARIABLE_LABELS}
             ariaLabel={UI_CONFIG.ARIA_LABELS.variableButton}
             getVariableIcon={getVariableIcon}
+            getVariableColor={getVariableColor}
           />
+          {/* Live condition summary — answers the question before the user asks it */}
+          {activeOverlayRange && (
+            <div style={{
+              marginTop: '0.35rem',
+              padding: '0.4rem 0.65rem',
+              background: 'rgba(0, 212, 255, 0.07)',
+              border: '1px solid rgba(0, 212, 255, 0.2)',
+              borderRadius: '6px',
+              fontSize: '0.8rem',
+              color: '#e0f7ff',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: '0.5rem',
+            }}>
+              <span style={{ opacity: 0.65, fontSize: '0.72rem', whiteSpace: 'nowrap' }}>
+                {selectedLegendLayer?.label ?? 'Current'}
+              </span>
+              <span style={{ fontWeight: 700, fontFamily: 'ui-monospace, monospace', whiteSpace: 'nowrap' }}>
+                {activeOverlayRange.min.toFixed(1)}–{activeOverlayRange.max.toFixed(1)}{' '}
+                <span style={{ fontWeight: 400, opacity: 0.7 }}>{activeOverlayRange.units}</span>
+              </span>
+            </div>
+          )}
         </ControlGroup>
 
-        <ControlGroup
-          icon={<FancyIcon icon={SlidersHorizontal} animationType="pulse" color="#90caf9" />}
-          title="Inundation Thresholds"
-          ariaLabel="Inundation threshold configuration"
-        >
-          <div className="inundation-threshold-trigger">
-            <button
-              type="button"
-              className={`inundation-threshold-trigger__btn${inundationThresholds.isDirty ? ' inundation-threshold-trigger__btn--dirty' : ''}`}
-              onClick={() => setShowThresholdEditor(true)}
-              title="Customise depth bands and severity labels"
-            >
-              <SlidersHorizontal size={14} />
-              Edit Thresholds
-              {inundationThresholds.isDirty && (
-                <span className="inundation-threshold-trigger__badge" title="Unsaved changes">●</span>
-              )}
-            </button>
-            <span className="inundation-threshold-trigger__count">
-              {`${inundationThresholds.categories.length} bands`}
-            </span>
-          </div>
-          <div className="inundation-threshold-trigger__hint">
-            Refine depth bands and severity descriptions as observed event data comes in. Changes apply live to the map popup and legend.
-          </div>
-        </ControlGroup>
+        {showTimelineInPanel && (
+          <ForecastTimeline
+            inline
+            sliderIndex={sliderIndex}
+            totalSteps={totalSteps}
+            minIndex={minIndex}
+            currentSliderDate={currentSliderDate}
+            capTime={capTime}
+            isPlaying={isPlaying}
+            playSpeedMs={playSpeedMs}
+            timeDisplayZone={timeDisplayZone}
+            disabled={selectedLayer?.isStatic || (isRasterInundation && rangeWindow?.mode && rangeWindow.mode !== 'single')}
+            onTimeIndexChange={handleSliderChange}
+            onPlayPause={handlePlayToggle}
+            onPrevious={handlePreviousTimestamp}
+            onNext={handleNextTimestamp}
+            onSpeedChange={setPlaySpeedMs}
+            onTimezoneChange={setTimeDisplayZone}
+          />
+        )}
 
         <ControlGroup
           icon={<FancyIcon icon={MapPin} animationType="pulse" color="#4caf50" />}
@@ -550,76 +563,57 @@ const ForecastApp = ({
           <IslandZoomControl
             islands={ISLAND_ZOOM_TARGETS}
             selectedIsland={selectedIslandId}
-            onIslandChange={setSelectedIslandId}
-            onZoomToIsland={() => zoomToIsland()}
+            onIslandChange={(id) => {
+              setSelectedIslandId(id);
+              zoomToIsland(id);
+            }}
           />
         </ControlGroup>
 
-        <ControlGroup
-          icon={<FancyIcon icon={FastForward} animationType="bounce" color="#ff9800" />}
-          title={UI_CONFIG.SECTIONS.FORECAST_TIME.title}
-          ariaLabel={UI_CONFIG.SECTIONS.FORECAST_TIME.ariaLabel}
-        >
-          <TimeControl
-            sliderIndex={sliderIndex}
-            totalSteps={totalSteps}
-            currentSliderDate={currentSliderDate}
-            isPlaying={isPlaying}
-            capTime={capTime}
-            onSliderChange={handleSliderChange}
-            onPlayToggle={handlePlayToggle}
-            onPrevious={handlePreviousTimestamp}
-            onNext={handleNextTimestamp}
-            formatDateTime={formatDateTime}
-            formatTime={formatDateTime}
-            timeDisplayZone={timeDisplayZone}
-            onTimeDisplayZoneChange={setTimeDisplayZone}
-            stepHours={capTime.stepHours || 1}
-            playIcon={<FancyIcon icon={Navigation} animationType="bounce" size={16} color="#4caf50" />}
-            pauseIcon={<FancyIcon icon={Activity} animationType="pulse" size={16} color="#ff5722" />}
-            minIndex={minIndex}
-            disabled={selectedLayer?.isStatic || false}
-          />
-          
-          {/* ✅ Warm-up Period Notice */}
-          {MARINE_CONFIG.SHOW_WARMUP_NOTICE && capTime.warmupSkipped && (
-            <div style={{
-              marginTop: '0.75rem',
-              padding: '0.5rem 0.75rem',
-              background: 'rgba(33, 150, 243, 0.1)',
-              border: '1px solid rgba(33, 150, 243, 0.3)',
-              borderRadius: '6px',
-              fontSize: '0.85rem',
-              color: '#90caf9',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}>
-              <FancyIcon icon={BadgeInfo} animationType="pulse" size={16} color="#2196f3" />
-              <span>
-                Showing reliable forecast data (excluding {capTime.warmupDays}-day model initialization)
+        {isRasterInundation && (
+          <ControlGroup
+            icon={<FancyIcon icon={SlidersHorizontal} animationType="pulse" color="#90caf9" />}
+            title="Inundation Thresholds"
+            ariaLabel="Inundation threshold configuration"
+          >
+            <div className="inundation-threshold-trigger">
+              <button
+                type="button"
+                className={`inundation-threshold-trigger__btn${inundationThresholds.isDirty ? ' inundation-threshold-trigger__btn--dirty' : ''}`}
+                onClick={() => setShowThresholdEditor(true)}
+                title="Customise depth bands and severity labels"
+              >
+                <SlidersHorizontal size={14} />
+                Edit Thresholds
+                {inundationThresholds.isDirty && (
+                  <span className="inundation-threshold-trigger__badge" title="Unsaved changes">●</span>
+                )}
+              </button>
+              <span className="inundation-threshold-trigger__count">
+                {`${inundationThresholds.categories.length} bands`}
               </span>
             </div>
-          )}
-
-          {isRasterInundation && isBuffering && (
-            <div style={{
-              marginTop: '0.75rem',
-              padding: '0.5rem 0.75rem',
-              background: 'rgba(14, 165, 233, 0.12)',
-              border: '1px solid rgba(14, 165, 233, 0.28)',
-              borderRadius: '6px',
-              fontSize: '0.85rem',
-              color: '#7dd3fc',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}>
-              <FancyIcon icon={CloudRain} animationType="pulse" size={16} color="#38bdf8" />
-              <span>Buffering inundation frames near the current time.</span>
+            <div className="inundation-threshold-trigger__hint">
+              Refine depth bands and severity descriptions as observed event data comes in. Changes apply live to the map popup and legend.
             </div>
-          )}
-        </ControlGroup>
+          </ControlGroup>
+        )}
+
+        {isRasterInundation && rangeWindow !== undefined && (
+          <ControlGroup
+            icon={<FancyIcon icon={BarChart2} animationType="pulse" color="#38bdf8" />}
+            title="Inundation Window"
+            ariaLabel="Inundation time window mode"
+          >
+            <InundationWindowControl
+              rangeWindow={rangeWindow}
+              setRangeWindow={setRangeWindow}
+              availableTimestamps={capTime?.availableTimestamps}
+              disabled={capTime?.loading}
+              currentTime={currentSliderDate}
+            />
+          </ControlGroup>
+        )}
 
         <ControlGroup
           icon={<FancyIcon icon={Settings} animationType="spin" color="#9c27b0" />}
@@ -632,6 +626,151 @@ const ForecastApp = ({
             formatPercent={UI_CONFIG.FORMATS.opacityPercent}
             ariaLabel={UI_CONFIG.ARIA_LABELS.overlayOpacity}
           />
+
+          {/* Terrain and Aerial imagery toggles — moved to the advanced-features
+              branch, disabled here on main. Restore by uncommenting this block
+              (terrainEnabled/setTerrainEnabled/terrainAvailable and
+              showOrtho2018/setShowOrtho2018 props are still threaded through
+              above, untouched, so re-enabling is just removing this comment).
+
+          <div className="map-display-option">
+            <div className="map-display-option__label">Terrain</div>
+            <div className="map-display-option__segmented" role="radiogroup" aria-label="Terrain display mode">
+              <button
+                type="button"
+                className={`map-display-option__btn${!terrainEnabled ? ' map-display-option__btn--active' : ''}`}
+                role="radio"
+                aria-checked={!terrainEnabled}
+                onClick={() => setTerrainEnabled?.(false)}
+              >
+                Off
+              </button>
+              <button
+                type="button"
+                className={`map-display-option__btn${terrainEnabled ? ' map-display-option__btn--active' : ''}`}
+                role="radio"
+                aria-checked={terrainEnabled}
+                disabled={!terrainAvailable}
+                onClick={() => terrainAvailable && setTerrainEnabled?.(true)}
+                title={terrainAvailable ? 'Enable 3D terrain relief' : 'Terrain DEM not configured'}
+              >
+                On
+              </button>
+            </div>
+            <div className="map-display-option__hint">
+              {terrainAvailable
+                ? isRasterInundation
+                  ? '3D terrain shows land relief. Inundation colours still represent modelled flood depth.'
+                  : '3D terrain adds topographic shading to the basemap.'
+                : 'Terrain DEM not configured — set REACT_APP_RAROTONGA_DEM_TILES to enable.'}
+            </div>
+          </div>
+
+          <div className="map-display-option">
+            <div className="map-display-option__label">Aerial imagery</div>
+            <div className="map-display-option__segmented" role="radiogroup" aria-label="Aerial imagery source">
+              <button
+                type="button"
+                className={`map-display-option__btn${!showOrtho2018 ? ' map-display-option__btn--active' : ''}`}
+                role="radio"
+                aria-checked={!showOrtho2018}
+                onClick={() => setShowOrtho2018?.(false)}
+                title="Show only the Esri World Imagery basemap"
+              >
+                Basemap only
+              </button>
+              <button
+                type="button"
+                className={`map-display-option__btn${showOrtho2018 ? ' map-display-option__btn--active' : ''}`}
+                role="radio"
+                aria-checked={showOrtho2018}
+                onClick={() => setShowOrtho2018?.(true)}
+                title="Show the 2018 high-resolution aerial survey over Rarotonga"
+              >
+                High-res 2018 survey
+              </button>
+            </div>
+            <div className="map-display-option__hint">
+              {showOrtho2018
+                ? '0.5m/px 2018 aerial survey is shown over Rarotonga; Esri World Imagery covers everywhere else. Terrain still drapes either way.'
+                : 'Showing only the Esri World Imagery basemap. It still drapes over 3D terrain the same as the 2018 survey does.'}
+            </div>
+          </div>
+          */}
+
+          {/* Flood display (2D depth bands / Experimental 3D depth) — moved to
+              the advanced-features branch, disabled here on main. Restore by
+              uncommenting this block (floodDisplayMode/setFloodDisplayMode,
+              flood3dElevScale/setFlood3dElevScale, flood3DAvailable,
+              flood3DConfig, and terrainEnabled props are still threaded
+              through above, untouched, so re-enabling is just removing this
+              comment).
+
+          {isRasterInundation && (
+            <div className="map-display-option">
+              <div className="map-display-option__label">Flood display</div>
+              <div className="map-display-option__segmented" role="radiogroup" aria-label="Flood display mode">
+                <button
+                  type="button"
+                  className={`map-display-option__btn${floodDisplayMode !== '3d' ? ' map-display-option__btn--active' : ''}`}
+                  role="radio"
+                  aria-checked={floodDisplayMode !== '3d'}
+                  onClick={() => setFloodDisplayMode?.('2d')}
+                >
+                  2D depth bands
+                </button>
+                <button
+                  type="button"
+                  className={`map-display-option__btn${floodDisplayMode === '3d' ? ' map-display-option__btn--active' : ''}`}
+                  role="radio"
+                  aria-checked={floodDisplayMode === '3d'}
+                  disabled={!flood3DAvailable}
+                  onClick={() => flood3DAvailable && setFloodDisplayMode?.('3d')}
+                  title={flood3DAvailable ? 'Enable experimental 3D flood depth' : flood3DConfig?.unavailableReason}
+                >
+                  Experimental 3D depth
+                </button>
+              </div>
+              <div className="map-display-option__hint">
+                {floodDisplayMode === '3d'
+                  ? `Column height is exaggerated ${flood3dElevScale}× for readability. Hover a column to see exact depth. Colour also shows depth.`
+                  : 'Switch to 3D to see flood depth as extruded columns. Hover for exact depth.'}
+              </div>
+              {floodDisplayMode === '3d' && (
+                <div className="opacity-control" style={{ marginTop: '0.5rem' }}>
+                  <label htmlFor="elev-scale-slider">
+                    Height exaggeration: <span>{flood3dElevScale}×</span>
+                  </label>
+                  <input
+                    id="elev-scale-slider"
+                    type="range"
+                    className="opacity-slider"
+                    min={1}
+                    max={10}
+                    step={1}
+                    value={flood3dElevScale}
+                    onChange={(e) => setFlood3dElevScale?.(Number(e.target.value))}
+                    aria-label="Column height exaggeration factor"
+                  />
+                </div>
+              )}
+              {floodDisplayMode === '3d' && terrainEnabled && (
+                <div style={{
+                  marginTop: '0.5rem',
+                  padding: '6px 9px',
+                  background: 'rgba(255, 152, 0, 0.12)',
+                  border: '1px solid rgba(255, 152, 0, 0.4)',
+                  borderRadius: '5px',
+                  fontSize: '0.8rem',
+                  color: '#ffb74d',
+                  lineHeight: 1.4,
+                }}>
+                  Terrain + 3D active: columns on higher ground appear taller even at the same flood depth. Use colour to compare depth across the map.
+                </div>
+              )}
+            </div>
+          )}
+          */}
         </ControlGroup>
 
         <ControlGroup

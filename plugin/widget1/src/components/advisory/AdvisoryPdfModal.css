@@ -1,0 +1,366 @@
+/* AdvisoryPdfModal.css — Marine Advisory PDF preview and export modal */
+
+/* ── Overlay ──────────────────────────────────────────────────────────────── */
+
+.advisory-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: blur(3px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+/* ── Modal shell ──────────────────────────────────────────────────────────── */
+
+.advisory-modal {
+  background: #0d1117;
+  border: 1px solid rgba(0, 212, 255, 0.20);
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.70), 0 0 0 1px rgba(0, 212, 255, 0.05);
+  width: 100%;
+  max-width: 500px;
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: inherit;
+}
+
+/* ── Header ───────────────────────────────────────────────────────────────── */
+
+.advisory-modal-hdr {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 16px 18px 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  flex-shrink: 0;
+}
+
+.advisory-modal-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #00d4ff;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+}
+
+.advisory-modal-sub {
+  font-size: 0.70rem;
+  color: #a8b3c2;
+  margin-top: 3px;
+}
+
+.advisory-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: transparent;
+  color: #b8c2cf;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+
+.advisory-close-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(248, 250, 252, 0.90);
+  border-color: rgba(255, 255, 255, 0.20);
+}
+
+/* ── Scrollable body ──────────────────────────────────────────────────────── */
+
+.advisory-modal-body {
+  overflow-y: auto;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1 1 auto;
+}
+
+/* ── Section ──────────────────────────────────────────────────────────────── */
+
+.advisory-section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.advisory-section-lbl {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #b7c0cc;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+/* ── Radio group ─────────────────────────────────────────────────────────── */
+
+.advisory-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.advisory-radio-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(203, 213, 225, 0.18);
+  background: #121922;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+  user-select: none;
+}
+
+.advisory-radio-item:hover {
+  border-color: rgba(0, 212, 255, 0.22);
+  background: rgba(0, 212, 255, 0.04);
+}
+
+.advisory-radio-item.is-sel {
+  border-color: rgba(34, 211, 238, 0.72);
+  background: #082832;
+}
+
+.advisory-radio-item input[type="radio"] {
+  margin-top: 3px;
+  accent-color: #00d4ff;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.advisory-radio-txt {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.78rem;
+  color: #f1f5f9;
+  line-height: 1.3;
+}
+
+.advisory-radio-dim {
+  font-size: 0.68rem;
+  color: #a8b3c2;
+  font-weight: 400;
+  margin-top: 1px;
+}
+
+/* ── Area bounds preview ─────────────────────────────────────────────────── */
+
+.advisory-bounds {
+  font-size: 0.68rem;
+  color: #b8c2cf;
+  font-family: 'Courier New', monospace;
+  padding: 3px 10px;
+  line-height: 1.4;
+}
+
+.advisory-bounds-warn {
+  color: #ffc078;
+}
+
+/* ── Statistics note ──────────────────────────────────────────────────────── */
+
+.advisory-stats-note {
+  font-size: 0.69rem;
+  color: #ffd09a;
+  background: rgba(194, 94, 0, 0.16);
+  border: 1px solid rgba(255, 184, 107, 0.42);
+  border-radius: 6px;
+  padding: 7px 10px;
+  line-height: 1.5;
+}
+
+/* ── Scope summary ───────────────────────────────────────────────────────── */
+
+.advisory-scope {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  padding: 11px 14px;
+}
+
+.advisory-scope-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: #b7c0cc;
+  margin-bottom: 9px;
+}
+
+.advisory-scope-grid {
+  display: grid;
+  grid-template-columns: 116px 1fr;
+  row-gap: 5px;
+  column-gap: 8px;
+}
+
+.advisory-scope-key {
+  font-size: 0.70rem;
+  color: #a8b3c2;
+  line-height: 1.3;
+  padding-top: 1px;
+}
+
+.advisory-scope-val {
+  font-size: 0.70rem;
+  color: #f1f5f9;
+  font-weight: 500;
+  line-height: 1.3;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.advisory-scope-step {
+  font-size: 0.64rem;
+  color: #9ca8b8;
+  font-family: 'Courier New', monospace;
+  font-weight: 400;
+}
+
+/* ── Footer ───────────────────────────────────────────────────────────────── */
+
+.advisory-modal-ftr {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 11px 18px 15px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.advisory-error {
+  font-size: 0.68rem;
+  color: rgba(231, 111, 81, 0.90);
+  margin-right: auto;
+  line-height: 1.3;
+}
+
+.advisory-btn-cancel {
+  padding: 6px 15px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  background: transparent;
+  color: #d3dae3;
+  font-size: 0.78rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s;
+  flex-shrink: 0;
+}
+
+.advisory-btn-cancel:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(248, 250, 252, 0.90);
+}
+
+.advisory-btn-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-radius: 7px;
+  border: 1px solid rgba(0, 212, 255, 0.38);
+  background: linear-gradient(135deg, #1e3a5f 0%, #2e5266 100%);
+  color: #00d4ff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.14s, box-shadow 0.14s;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.advisory-btn-export:hover:not(:disabled) {
+  border-color: rgba(0, 212, 255, 0.72);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.22);
+}
+
+.advisory-btn-export:disabled {
+  opacity: 0.60;
+  cursor: not-allowed;
+}
+
+/* Native selects otherwise inherit a light browser control theme, producing
+   black text on the modal's dark background in some Chromium builds. */
+.advisory-select {
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 34px 7px 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(203, 213, 225, 0.24);
+  background: #121922;
+  color: #f1f5f9;
+  color-scheme: dark;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.advisory-select option {
+  background: #121922;
+  color: #f1f5f9;
+}
+
+.advisory-select:focus-visible,
+.advisory-radio-item:focus-within,
+.advisory-close-btn:focus-visible,
+.advisory-btn-cancel:focus-visible,
+.advisory-btn-export:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 2px;
+}
+
+.advisory-modal-body {
+  scrollbar-color: #667384 #111820;
+  scrollbar-width: thin;
+}
+
+@keyframes advisory-spin {
+  to { transform: rotate(360deg); }
+}
+
+.advisory-spin {
+  animation: advisory-spin 1s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ── Mobile ───────────────────────────────────────────────────────────────── */
+
+@media (max-width: 540px) {
+  .advisory-modal {
+    max-width: 100%;
+    border-radius: 10px 10px 0 0;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 90vh;
+  }
+  .advisory-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .advisory-scope-grid {
+    grid-template-columns: 100px 1fr;
+  }
+}

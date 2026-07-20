@@ -1,4 +1,5 @@
 import React from 'react';
+import ThemeToggle from './ThemeToggle';
 
 const ModernHeader = () => {
   const [currentTime, setCurrentTime] = React.useState(new Date());
@@ -23,8 +24,7 @@ const ModernHeader = () => {
   };
 
   return (
-    <nav style={{
-      background: 'linear-gradient(135deg, #0a2463 0%, #1e3a5f 40%, #2e5266 70%, #3e7b69 100%)',
+    <nav className="modern-header" style={{
       minHeight: '60px',
       padding: '0 30px',
       display: 'flex',
@@ -32,8 +32,6 @@ const ModernHeader = () => {
       justifyContent: 'space-between',
       position: 'relative',
       zIndex: 1001,
-      boxShadow: '0 2px 20px rgba(0,0,0,0.3)',
-      borderBottom: '1px solid rgba(255,255,255,0.1)'
     }}>
       {/* Logo and Title */}
       <div style={{
@@ -51,7 +49,7 @@ const ModernHeader = () => {
           }}
         />
         <div>
-          <h1 style={{
+          <h1 className="modern-header__title" style={{
             margin: 0,
             color: '#00d4ff',
             fontSize: '1.5rem',
@@ -81,6 +79,8 @@ const ModernHeader = () => {
         alignItems: 'center',
         gap: '20px'
       }}>
+        <ThemeToggle />
+
         {/* Connection Status */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <div style={{

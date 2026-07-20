@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import WaterLevelChart from './WaterLevelChart';
+import { getRiskThresholdOverride, saveRiskThresholdOverride } from '../../services/riskDataService';
 import './RiskDetailsPanel.css';
 
 const RISK_COLORS = {
@@ -42,7 +43,7 @@ const parseThresholdInput = (value) => {
   return Number(value);
 };
 
-function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeSelect }) {
+function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeSelect, onThresholdsSaved }) {
   const point = data?.point || {};
   const details = data?.details || null;
   const metadata = details?.metadata || null;
@@ -55,6 +56,8 @@ function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeS
   const [moderateInput, setModerateInput] = useState('');
   const [badgePulse, setBadgePulse] = useState(false);
   const [saveFlash, setSaveFlash] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const saveFlashTimerRef = useRef(null);
 
   const selectedIndex = useMemo(() => {
@@ -71,20 +74,17 @@ function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeS
     return best >= 0 ? best : null;
   }, [details?.time_10min, currentSliderDate]);
 
-  // Load saved thresholds for this point (if any), falling back to API values
+  // Load saved thresholds for this point (server override, then local draft), falling
+  // back to API values. getRiskThresholdOverride is the single source of truth shared
+  // with the map marker's own color (see useZarrMap.js's refreshRiskMarkerColors).
   useEffect(() => {
     const pointId = point?.id;
-    if (pointId != null) {
-      try {
-        const saved = JSON.parse(localStorage.getItem(`risk-thresholds-${pointId}`));
-        if (saved?.minor != null && saved?.moderate != null) {
-          setMinorInput(String(saved.minor));
-          setModerateInput(String(saved.moderate));
-          return;
-        }
-      } catch {
-        // corrupted entry — fall through to API defaults
-      }
+    setSaveError(false);
+    const override = getRiskThresholdOverride(pointId);
+    if (override) {
+      setMinorInput(String(override.minor));
+      setModerateInput(String(override.moderate));
+      return;
     }
     setMinorInput(Number.isFinite(minorThreshold) ? minorThreshold.toFixed(2) : '');
     setModerateInput(Number.isFinite(moderateThreshold) ? moderateThreshold.toFixed(2) : '');
@@ -164,9 +164,16 @@ function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeS
     setModerateInput(Number.isFinite(moderateThreshold) ? moderateThreshold.toFixed(2) : '');
   };
 
-  const saveThresholds = () => {
+  const saveThresholds = async () => {
     const pointId = point?.id;
-    if (pointId == null) return;
+    if (pointId == null || isSaving) return;
+    const [minor, moderate] = editableThresholds;
+
+    setIsSaving(true);
+    setSaveError(false);
+
+    // Local draft first — guarantees this browser reflects the edit even if the
+    // network save below fails (offline, server down, etc).
     try {
       localStorage.setItem(
         `risk-thresholds-${pointId}`,
@@ -175,6 +182,16 @@ function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeS
     } catch {
       // storage unavailable — silent fail
     }
+
+    try {
+      await saveRiskThresholdOverride(pointId, minor, moderate);
+    } catch (error) {
+      console.error('Failed to save risk thresholds to server (kept as a local-only draft):', error);
+      setSaveError(true);
+    }
+
+    setIsSaving(false);
+    onThresholdsSaved?.(pointId);
     setSaveFlash(true);
     if (saveFlashTimerRef.current) clearTimeout(saveFlashTimerRef.current);
     saveFlashTimerRef.current = window.setTimeout(() => setSaveFlash(false), 1500);
@@ -268,6 +285,11 @@ function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeS
             Moderate flood must be greater than minor flood.
           </span>
         )}
+        {thresholdsValid && saveError && (
+          <span className="risk-threshold-warning">
+            Saved to this browser only — server save failed, other users won't see this edit yet.
+          </span>
+        )}
         <div className="risk-threshold-actions">
           <button type="button" className="risk-threshold-reset" onClick={resetThresholds}>
             Reset
@@ -276,15 +298,15 @@ function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeS
             type="button"
             className={`risk-threshold-save${saveFlash ? ' risk-threshold-save--flash' : ''}`}
             onClick={saveThresholds}
-            disabled={!thresholdsValid || point?.id == null}
-            title={point?.id == null ? 'No point selected' : 'Save thresholds for this point to browser storage'}
+            disabled={!thresholdsValid || point?.id == null || isSaving}
+            title={point?.id == null ? 'No point selected' : 'Save thresholds for this point'}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M15.2 3H19a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.8" />
               <path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7" />
               <path d="M7 3v4a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V3" />
             </svg>
-            {saveFlash ? 'Saved' : 'Save'}
+            {isSaving ? 'Saving...' : saveFlash ? 'Saved' : 'Save'}
           </button>
         </div>
       </div>

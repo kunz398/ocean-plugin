@@ -15,7 +15,8 @@ export const useMapInteraction = ({
   currentSliderDate,
   setBottomCanvasData,
   setShowBottomCanvas,
-  debugMode = false
+  debugMode = false,
+  enabled = true
 }) => {
   // Create stable service instances using useRef
   const servicesRef = useRef(null);
@@ -41,6 +42,8 @@ export const useMapInteraction = ({
   
   // Clean map click handler
   const handleMapClick = useCallback(async (clickEvent) => {
+    if (!enabled) return;
+
     const map = mapInstance?.current;
     if (!map) return;
     
@@ -83,11 +86,12 @@ export const useMapInteraction = ({
         status: "error"
       });
     }
-  }, [mapInstance, currentSliderDate]);
+  }, [enabled, mapInstance, currentSliderDate]);
   
   // Initialize services when map is available
   useEffect(() => {
     const map = mapInstance?.current;
+    if (!enabled) return;
     if (!map) return;
     
     // Initialize marker service with map instance
@@ -96,11 +100,12 @@ export const useMapInteraction = ({
     return () => {
       servicesRef.current.markerService.cleanup();
     };
-  }, [mapInstance]);
+  }, [enabled, mapInstance]);
 
   // Set up map click listener
   useEffect(() => {
     const map = mapInstance?.current;
+    if (!enabled) return;
     if (!map) return;
     
     map.on('click', handleMapClick);
@@ -108,7 +113,7 @@ export const useMapInteraction = ({
     return () => {
       map.off('click', handleMapClick);
     };
-  }, [mapInstance, handleMapClick]);
+  }, [enabled, mapInstance, handleMapClick]);
   
   // Return control functions if needed
   return {

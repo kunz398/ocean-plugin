@@ -9,18 +9,18 @@ import { useEffect, useCallback, useRef } from 'react';
 import MapInteractionService from '../services/MapInteractionService';
 import BottomCanvasManager from '../services/BottomCanvasManager';
 import MapMarkerService from '../services/MapMarkerService';
-import SfincsRasterService from '../services/SfincsRasterService';
+import { createInundationProvider } from '../services/inundationProviderFactory';
 import { isInundationLayer, INUNDATION_POPUP_ZOOM_THRESHOLD, getLayerBounds, isRasterSourceLayer } from '../config/layerConfig';
 
 export const useMapInteraction = ({
   mapInstance,
   currentSliderDate,
-  sliderIndex,
   setBottomCanvasData,
   setShowBottomCanvas,
   selectedWaveForecast = '',
   selectedLayerConfig = null,
   inundationCategories = null,
+  rangeWindow = null,
   debugMode = false
 }) => {
   // Create stable service instances using useRef
@@ -99,15 +99,17 @@ export const useMapInteraction = ({
         }
         servicesRef.current.markerService.addTemporaryMarker(clickEvent.latlng, { usePin: true }, map);
 
-        settersRef.current.setBottomCanvasData({ mode: 'inundation', loading: true, lat, lng });
+        settersRef.current.setBottomCanvasData({ mode: 'inundation', loading: true, lat, lng, rangeWindow });
         settersRef.current.setShowBottomCanvas(true);
 
         try {
           let timeseries = null;
           if (usesRasterSource) {
-            const rasterService = new SfincsRasterService(selectedLayerConfig.apiBase);
-            const result = await rasterService.getTimeseries({ lat, lng });
-            timeseries = result?.values ?? null;
+            const provider = createInundationProvider(selectedLayerConfig.apiBase);
+            if (provider.capabilities.timeseries) {
+              const result = await provider.getTimeseries({ lat, lng });
+              timeseries = result?.values ?? null;
+            }
           }
           settersRef.current.setBottomCanvasData({
             mode: 'inundation',
@@ -115,6 +117,7 @@ export const useMapInteraction = ({
             lng,
             timeseries,
             categories: inundationCategories,
+            rangeWindow,
           });
         } catch (err) {
           console.error('Failed to fetch inundation timeseries:', err);
@@ -124,6 +127,7 @@ export const useMapInteraction = ({
             lng,
             timeseries: null,
             categories: inundationCategories,
+            rangeWindow,
             error: err.message,
           });
         }
@@ -172,6 +176,7 @@ export const useMapInteraction = ({
           lng: clickEvent.latlng.lng,
           timeseries: null,
           categories: inundationCategories,
+          rangeWindow,
           error: error.message,
         });
         return;
@@ -183,7 +188,7 @@ export const useMapInteraction = ({
         status: "error"
       });
     }
-  }, [mapInstance, currentSliderDate, selectedWaveForecast, selectedLayerConfig, sliderIndex, inundationCategories]);
+  }, [mapInstance, currentSliderDate, selectedWaveForecast, selectedLayerConfig, inundationCategories, rangeWindow]);
   
   // Initialize services when map is available
   useEffect(() => {

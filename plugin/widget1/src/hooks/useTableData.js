@@ -128,9 +128,10 @@ export const useDarkMode = () => {
   useEffect(() => {
     // Initial check
     const checkTheme = () => {
-      const isDark = document.body.classList.contains('dark-mode') ||
-                    document.documentElement.classList.contains('dark-mode') ||
-                    document.documentElement.getAttribute('data-theme') === 'dark';
+      const theme = document.documentElement.getAttribute('data-theme');
+      const isDark = theme === 'dark' ||
+                    document.body.classList.contains('dark-mode') ||
+                    document.documentElement.classList.contains('dark-mode');
       setIsDarkMode(isDark);
     };
     
@@ -154,8 +155,10 @@ export const useDarkMode = () => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleMediaChange = () => {
       // Only use system preference if no explicit theme is set
-      if (!document.body.classList.contains('dark-mode') && 
-          !document.body.classList.contains('light-mode')) {
+      const explicitTheme = document.documentElement.getAttribute('data-theme') ||
+                            document.body.classList.contains('dark-mode') ||
+                            document.body.classList.contains('light-mode');
+      if (!explicitTheme) {
         setIsDarkMode(mediaQuery.matches);
       }
     };

@@ -96,6 +96,24 @@ export const ylgnbuColor = (value, min = 0, max = 20) => {
   return lerpColor(0x65a30d, 0xa3a322, (v - 0.875) * 8);                 // Lime to golden green
 };
 
+// ColorBrewer Spectral palette for Mean Wave Period.
+// Matches the map/legend ramp: short periods red/orange, mid periods yellow/green,
+// long energetic swell blue/purple.
+export const spectralColor = (value, min = 0, max = 20) => {
+  const v = Math.max(0, Math.min(1, (value - min) / (max - min)));
+
+  if (v <= 0.1) return lerpColor(0x9e0142, 0xd53e4f, v * 10);
+  if (v <= 0.2) return lerpColor(0xd53e4f, 0xf46d43, (v - 0.1) * 10);
+  if (v <= 0.3) return lerpColor(0xf46d43, 0xfdae61, (v - 0.2) * 10);
+  if (v <= 0.4) return lerpColor(0xfdae61, 0xfee08b, (v - 0.3) * 10);
+  if (v <= 0.5) return lerpColor(0xfee08b, 0xffffbf, (v - 0.4) * 10);
+  if (v <= 0.6) return lerpColor(0xffffbf, 0xe6f598, (v - 0.5) * 10);
+  if (v <= 0.7) return lerpColor(0xe6f598, 0xabdda4, (v - 0.6) * 10);
+  if (v <= 0.8) return lerpColor(0xabdda4, 0x66c2a5, (v - 0.7) * 10);
+  if (v <= 0.9) return lerpColor(0x66c2a5, 0x3288bd, (v - 0.8) * 10);
+  return lerpColor(0x3288bd, 0x5e4fa2, (v - 0.9) * 10);
+};
+
 // OCEAN MAGMA palette for Peak Wave Period - deep blue to warm coral harmony
 export const magmaColor = (value, min = 0, max = 20) => {
   const v = Math.max(0, Math.min(1, (value - min) / (max - min)));
@@ -118,8 +136,9 @@ export const COLOR_FUNCTIONS = {
   bu: blueColor,
   ylgnbu: ylgnbuColor,     // YlGnBu palette for wave periods
   viridis: viridisColor,   // Viridis palette for wave heights
-  spectral: ylgnbuColor,   // Use YlGnBu for spectral as fallback
-  magenta: magmaColor,     // Magma palette for peak periods
+  spectral: spectralColor,
+  magma: magmaColor,
+  magenta: magmaColor,     // Backward-compatible alias for peak periods
   plasma: jetColor,        // Keep jet as plasma fallback
   default: blueColor,
 };

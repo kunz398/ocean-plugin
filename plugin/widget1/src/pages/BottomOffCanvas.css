@@ -23,7 +23,7 @@
 
 /* Ensure drag handle is clearly visible and interactive */
 .drag-handle {
-  height: 12px !important;
+  height: 22px !important;
   cursor: ns-resize !important;
   user-select: none !important;
   position: relative !important;
@@ -32,4 +32,152 @@
 
 .drag-handle:hover {
   opacity: 0.8;
+}
+
+.bottom-offcanvas__body--inundation {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  padding: 12px 24px 14px;
+}
+
+.inundation-timeseries {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: visible;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.inundation-timeseries__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.inundation-timeseries__advisory {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+
+.inundation-timeseries__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+  min-width: 0;
+  color: rgba(203, 213, 225, 0.82);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.inundation-timeseries__controls > span {
+  min-width: 0;
+  padding-left: 1px;
+}
+
+.inundation-timeseries__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  color: rgba(241, 245, 249, 0.9);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.inundation-timeseries__toggle input {
+  accent-color: #00d4ff;
+}
+
+.inundation-timeseries__export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(241, 245, 249, 0.82);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.inundation-timeseries__export-btn:hover {
+  background: rgba(255, 255, 255, 0.13);
+  border-color: rgba(148, 163, 184, 0.5);
+}
+
+.inundation-timeseries__export-btn:active {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.inundation-timeseries__chart {
+  flex: 1 1 0;
+  min-height: 220px;
+  min-width: 0;
+  width: 100%;
+  overflow: visible;
+}
+
+.inundation-timeseries__chart .js-plotly-plot,
+.inundation-timeseries__chart .plot-container,
+.inundation-timeseries__chart .svg-container {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+.inundation-timeseries__chart .trace.scatter .lines path.forecast-line-enter {
+  animation: forecastLineIn 400ms ease-out both;
+}
+
+@keyframes forecastLineIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inundation-timeseries__chart .trace.scatter .lines path.forecast-line-enter {
+    animation: none;
+  }
+}
+
+@media (max-width: 1200px) {
+  .inundation-timeseries__stats {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .bottom-offcanvas__body--inundation {
+    padding: 10px;
+  }
+
+  .inundation-timeseries__chart {
+    min-height: 240px;
+  }
+
+  .inundation-timeseries__stats {
+    grid-template-columns: 1fr;
+  }
+
+  .inundation-timeseries__controls {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }

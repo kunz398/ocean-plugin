@@ -11,6 +11,10 @@
 # production
 /build
 
+# generated advisory/report exports
+src/components/niue_*_advisory_t*.pdf
+src/components/niue_same_ocean_different_risk_t*.pdf
+
 # misc
 .DS_Store
 .env.local
@@ -21,3 +25,6 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# browser network capture — can contain auth tokens/cookies, debug artifact only
+*.har

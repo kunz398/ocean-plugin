@@ -43,7 +43,7 @@ const CompactLegend = ({
     return layerTitle
       .replace(/_/g, ' ')
       .replace(/\b\w/g, l => l.toUpperCase())
-      .replace(/Hs/g, 'Wave Height')
+      .replace(/Hs/g, 'Significant Wave Height')
       .replace(/Tm/g, 'Wave Period')
       .replace(/Dir/g, 'Direction');
   };

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { MARINE_CONFIG } from '../config/marineVariables';
 import { isRasterSourceLayer } from '../config/layerConfig';
-import SfincsRasterService from '../services/SfincsRasterService';
+import { createInundationProvider } from '../services/inundationProviderFactory';
 
 /**
  * Hook for fetching and managing WMS capabilities
@@ -41,10 +41,10 @@ export const useWMSCapabilities = (selectedLayer, allLayers) => {
         console.log(`🔍 Layer config:`, selectedLayerConfig);
 
         if (isRasterSourceLayer(selectedLayerConfig)) {
-          const rasterService = new SfincsRasterService(selectedLayerConfig.apiBase);
+          const provider = createInundationProvider(selectedLayerConfig.apiBase);
           const [metadata, availableTimestamps] = await Promise.all([
-            rasterService.loadMetadata(),
-            rasterService.loadTimesteps()
+            provider.loadMetadata(),
+            provider.loadTimesteps()
           ]);
 
           const stepHours = getStepHoursFromTimestamps(availableTimestamps) || 1;

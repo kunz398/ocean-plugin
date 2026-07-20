@@ -6,14 +6,11 @@ export default function Header() {
   const [dark, setDark] = useState(true);
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const stored = localStorage.getItem('theme');
-    console.log(stored)
-    if (stored === 'light') setDark(false);
-    else setDark(true);
-    // Fallback: detect if class already present
-    if (document.documentElement.classList.contains('dark-mode') || document.body.classList.contains('dark-mode')) {
-      setDark(true);
-    }
+    const stored = localStorage.getItem('ui-theme') || localStorage.getItem('theme');
+    const docTheme = document.documentElement.getAttribute('data-theme');
+    if (stored === 'day' || stored === 'light' || docTheme === 'day') setDark(false);
+    else if (stored === 'dark' || docTheme === 'dark') setDark(true);
+    else setDark(false);
   }, []);
   return (
     <nav className="navbar navbar-expand-lg py-2" style={{ 

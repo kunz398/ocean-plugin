@@ -6,7 +6,8 @@ function MapPreview({ data }) {
   // Check for dark mode
   useEffect(() => {
     const checkTheme = () => {
-      const isDark = document.body.classList.contains('dark-mode');
+      const theme = document.documentElement.getAttribute('data-theme');
+      const isDark = theme === 'dark' || document.body.classList.contains('dark-mode');
       setIsDarkMode(isDark);
     };
     
@@ -14,7 +15,7 @@ function MapPreview({ data }) {
     
     // Listen for theme changes
     const observer = new MutationObserver(checkTheme);
-    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
     
     return () => observer.disconnect();
   }, []);

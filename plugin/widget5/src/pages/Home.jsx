@@ -1,234 +1,111 @@
-import React, { useCallback, useEffect, useMemo } from "react";
-import "leaflet/dist/leaflet.css";
-import L from "leaflet";
-import addWMSTileLayer from "./addWMSTileLayer";
-import BottomOffCanvas from "./BottomOffCanvas";
-import BottomBuoyOffCanvas from "./BottomBuoyOffCanvas";
-import { useForecast } from "../hooks/useForecast";
-import useRiskOverlay from "../hooks/useRiskOverlay";
-import ForecastApp from "../components/ForecastApp";
-import useInundationThresholds from "../hooks/useInundationThresholds";
-import ModernHeader from "../components/ModernHeader";
-import WorldClassVisualization from "../utils/WorldClassVisualization";
-import LegendCleanup from "../components/LegendCleanup";
-import { INUNDATION_VISUAL_COLOR_SCALE_RANGE, RASTER_SOURCE_TYPE } from "../config/layerConfig";
-import { ISLAND_ZOOM_TARGETS } from "../config/islandConfig";
-import { getSfincsRasterApiBase } from "../config/sfincsRasterConfig";
-
-// Initialize world-class visualization system
-const worldClassViz = new WorldClassVisualization();
-// TEMPORARY: Using ncWMS while THREDDS server is down
-const FORECAST_WMS_URL = "https://gemthreddshpc.spc.int/thredds/wms/POP/model/country/spc/forecast/hourly/COK/SWAN_UGRID.nc";
-const FORECAST_DATASET = "cook_forecast";
-
-const getResponsiveLegendDimensions = () => {
-  const screenWidth = window.innerWidth;
-  if (screenWidth <= 480) {
-    return { width: '40', height: '200' };
-  }
-  if (screenWidth <= 768) {
-    return { width: '45', height: '240' };
-  }
-  if (screenWidth <= 1024) {
-    return { width: '50', height: '280' };
-  }
-  return { width: '60', height: '320' };
-};
-
-
-
-// World-class legend URL generator
-const getWorldClassLegendUrl = (variable, range, unit) => {
-  return worldClassViz.getWorldClassLegendUrl(variable, range, unit);
-};
-
-const getRarotongaInundationLegendUrl = () => {
-  const baseUrl = "https://gemthreddshpc.spc.int/thredds/wms/POP/model/country/spc/forecast/hourly/COK/sfincs_map_epsg4326.nc";
-  const { width, height } = getResponsiveLegendDimensions();
-  const params = new URLSearchParams({
-    REQUEST: 'GetLegendGraphic',
-    LAYER: 'hmax',
-    PALETTE: 'x-Sst',
-    COLORBARONLY: 'true',
-    WIDTH: width,
-    HEIGHT: height,
-    COLORSCALERANGE: INUNDATION_VISUAL_COLOR_SCALE_RANGE,
-    NUMCOLORBANDS: '250',
-    COLORSCALING: 'linear',
-    VERTICAL: 'true',
-    TRANSPARENT: 'true',
-    FORMAT: 'image/png',
-    unit: 'm'
-  });
-  return `${baseUrl}?${params.toString()}`;
-};
-
-const variableConfigMap = {
-  hs: (maxHeight) => worldClassViz.getAdaptiveWaveHeightConfig(maxHeight, "tropical"),
-  tm02: () => worldClassViz.getAdaptiveWavePeriodConfig(20.0, "cookIslands"),
-  tpeak: () => ({
-    style: "default-scalar/psu-magma",
-    // Use full range starting from zero for peak wave period visualization
-    colorscalerange: "0,13.68",
-    numcolorbands: 200,
-    belowmincolor: "transparent",
-    abovemaxcolor: "extend"
-  }),
-  inun: () => ({
-    style: "default-scalar/x-Sst",
-    colorscalerange: INUNDATION_VISUAL_COLOR_SCALE_RANGE,
-    numcolorbands: 250,
-    belowmincolor: "transparent",
-    abovemaxcolor: "extend",
-    colorscaling: "linear"
-  }),
-  dirm: () => ({ style: "black-arrow", colorscalerange: "" }),
-};
-
-// Get adaptive WMS configuration based on variable type and conditions
-const getWorldClassConfig = (variable, maxHeight = 6.0) => {
-  for (const key in variableConfigMap) {
-    if (variable.includes(key)) {
-      return variableConfigMap[key](maxHeight);
-    }
-  }
-  // Default fallback
-  return worldClassViz.getAdaptiveWaveHeightConfig();
-};
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import BottomOffCanvas from './BottomOffCanvas';
+import BottomBuoyOffCanvas from './BottomBuoyOffCanvas';
+import ForecastApp from '../components/ForecastApp';
+import useInundationThresholds from '../hooks/useInundationThresholds';
+import ModernHeader from '../components/ModernHeader';
+import { FLOOD_3D_CONFIG, MAP_LAYERS, MAP_TERRAIN_CONFIG } from '../lib/mapLayersConfig';
+import { useZarrMap } from '../hooks/useZarrMap';
 
 const widgetContainerStyle = {
-  position: "fixed",
+  position: 'fixed',
   top: 0,
   left: 0,
-  width: "100vw",
-  height: "calc(100dvh - 0px)",
+  width: '100vw',
+  height: 'calc(100dvh - 0px)',
   zIndex: 9999,
 };
-
-// Set default map extent to the national Cook Islands footprint on initial load.
-const nationalBounds = ISLAND_ZOOM_TARGETS.reduce((acc, island) => {
-  if (!acc) {
-    return L.latLngBounds(island.bounds.southWest, island.bounds.northEast);
-  }
-
-  acc.extend(island.bounds.southWest);
-  acc.extend(island.bounds.northEast);
-  return acc;
-}, null);
-const bounds = nationalBounds;
-
-
 
 function CookIslandsForecast() {
   const inundationThresholds = useInundationThresholds();
 
-  // World-class composite layer configuration
-  const WAVE_FORECAST_LAYERS = useMemo(() => {
-    const worldClassComposite = worldClassViz.getWorldClassCompositeConfig();
-    return [
-      // 🌊 WORLD-CLASS COMPOSITE LAYER
-      worldClassComposite,
-      
+  // ── layer / variable selection ───────────────────────────────────────────
+  const ALL_LAYERS = useMemo(() => MAP_LAYERS, []);
+  const [selectedWaveForecast, setSelectedWaveForecast] = useState(ALL_LAYERS[0]?.value ?? '');
+  const [wmsOpacity, setWmsOpacity] = useState(1.0);
+  const [activeLayers, setActiveLayers] = useState({
+    waveForecast: true,
+    riskPoints: true,
+  });
+  const [sliderIndex, setSliderIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playSpeedMs, setPlaySpeedMs] = useState(700);
+  const [rangeWindow, setRangeWindow] = useState({ mode: 'single' });
+  const [terrainEnabled, setTerrainEnabled] = useState(false);
+  const [showOrtho2018, setShowOrtho2018] = useState(true);
+  const [floodDisplayMode, setFloodDisplayMode] = useState('2d');
+  const [flood3dElevScale, setFlood3dElevScale] = useState(FLOOD_3D_CONFIG.elevationScale ?? 6);
 
+  // ── canvas visibility ────────────────────────────────────────────────────
+  const [showBottomCanvas, setShowBottomCanvas] = useState(false);
+  const [bottomCanvasData, setBottomCanvasData] = useState(null);
+  const [showBuoyCanvas, setShowBuoyCanvas] = useState(false);
 
-      {
-        label: "Mean Wave Period",
-        value: "tm02",
-        ...getWorldClassConfig('tm02'),
-        id: 4,
-        wmsUrl: FORECAST_WMS_URL,
-        dataset: FORECAST_DATASET,
-        legendUrl: getWorldClassLegendUrl('tm02', '0,20', 's'),
-        description: "ENHANCED Divergent Spectral palette - maximum visual distinction for wave period analysis with full spectrum color differentiation"
-      },
-      {
-        label: "Peak Wave Period",
-        value: "tpeak", 
-        ...getWorldClassConfig('tpeak'),
-        id: 5,
-        wmsUrl: FORECAST_WMS_URL,
-        dataset: FORECAST_DATASET,
-        legendUrl: getWorldClassLegendUrl('tpeak', '0,13.68', 's'),
-        description: "Enhanced peak period analysis with full range (0-13.68s) using magma color gradation"
-      }
-    ];
-  }, []);
+  // Mutual exclusion: only one panel open at a time
+  useEffect(() => { if (showBottomCanvas) setShowBuoyCanvas(false); }, [showBottomCanvas]);
+  useEffect(() => { if (showBuoyCanvas) setShowBottomCanvas(false); }, [showBuoyCanvas]);
 
-  // Additional forecast layers
-  const STATIC_LAYERS = useMemo(() => {
-    return [
-      {
-        label: "Rarotonga Inundation",
-        value: "Cook_island_national_sfincs/hmax",
-        ...getWorldClassConfig('raro_inun'),
-        id: 200,
-        sourceType: RASTER_SOURCE_TYPE,
-        apiBase: getSfincsRasterApiBase(),
-        legendUrl: getRarotongaInundationLegendUrl(),
-        description: "SFINCS model maximum water depth",
-        style: 'default-scalar/x-Sst',
-        rasterMinDepth: -0.05,
-        rasterMaxDepth: 3.0,
-        bounds: {
-          southWest: [-21.281671213355985, -159.83717346191406],
-          northEast: [-21.19118441998148, -159.71783447265625]
-        },
-        isStatic: false
-      }
-    ];
-  }, []);
-  
-  // Combined layers for components that need all layers
-  const ALL_LAYERS = useMemo(() => {
-    return [...WAVE_FORECAST_LAYERS, ...STATIC_LAYERS];
-  }, [WAVE_FORECAST_LAYERS, STATIC_LAYERS]);
+  // ── thresholds → zarr overlay thresholds ────────────────────────────────
+  const zarrThresholds = useMemo(() => {
+    const cats = inundationThresholds.lastValidCategories;
+    if (!Array.isArray(cats) || cats.length === 0) return null;
+    return cats
+      .filter((c) => Number.isFinite(c?.thresholdM))
+      .sort((a, b) => a.thresholdM - b.thresholdM)
+      .map((c) => ({ value: c.thresholdM, color: hexToRgb(c.color) }));
+  }, [inundationThresholds.lastValidCategories]);
 
-  const cookIslandsConfig = useMemo(() => ({
-    WAVE_FORECAST_LAYERS,
-    STATIC_LAYERS,
-    ALL_LAYERS,
-    WAVE_BUOYS: [], // No buoys for Cook Islands
-    bounds,
-    addWMSTileLayer,
-    inundationCategories: inundationThresholds.lastValidCategories,
-    inundationMinDepth: inundationThresholds.minVisibleDepth,
-    inundationResampleColors: inundationThresholds.resampleColors,
-  }), [
-    WAVE_FORECAST_LAYERS,
-    STATIC_LAYERS,
-    ALL_LAYERS,
-    inundationThresholds.lastValidCategories,
-    inundationThresholds.minVisibleDepth,
-    inundationThresholds.resampleColors,
-  ]);
-  
+  // ── main map + overlay hook ──────────────────────────────────────────────
   const {
-    showBuoyCanvas, setShowBuoyCanvas,
-    showBottomCanvas, setShowBottomCanvas,
-    bottomCanvasData, setBottomCanvasData,
-    selectedBuoyId,
-    activeLayers, setActiveLayers,
-    selectedWaveForecast, setSelectedWaveForecast,
-    capTime,
-    sliderIndex, setSliderIndex,
-    isPlaying, setIsPlaying,
-    wmsOpacity, setWmsOpacity,
-    dynamicLayers,
-    isUpdatingVisualization,
     mapRef,
-    totalSteps,
-    currentSliderDate,
     mapInstance,
-    minIndex,
-    isBuffering,
-  } = useForecast(cookIslandsConfig);
+    timeCount,
+    currentSliderDate,
+    capTime,
+    loading,
+    error: overlayError,
+    overlayStats,
+    fitBounds,
+    setBasemap,
+    removePinMarker,
+    setShowContours,
+    refreshRiskMarkerColors,
+  } = useZarrMap({
+    selectedLayerId: selectedWaveForecast,
+    sliderIndex,
+    setSliderIndex,
+    isPlaying,
+    setIsPlaying,
+    playSpeedMs,
+    opacity: wmsOpacity,
+    thresholds: zarrThresholds,
+    riskEnabled: activeLayers?.riskPoints !== false,
+    setBottomCanvasData,
+    setShowBottomCanvas,
+    inundationCategories: inundationThresholds.lastValidCategories,
+    minVisibleDepth: inundationThresholds.minVisibleDepth,
+    rangeWindow,
+    terrainEnabled,
+    terrainConfig: MAP_TERRAIN_CONFIG,
+    showOrtho2018,
+    flood3dEnabled: floodDisplayMode === '3d',
+    flood3dConfig: FLOOD_3D_CONFIG,
+    flood3dElevScale,
+  });
+
+  const totalSteps = Math.max(1, timeCount) - 1;
+
+  const handleHideBottomCanvas = useCallback(() => {
+    setShowBottomCanvas(false);
+    removePinMarker();
+  }, [removePinMarker]);
 
   const handleTimeSelect = useCallback((date) => {
     const timestamps = capTime.availableTimestamps;
     if (!timestamps?.length || !date) return;
     const t = date.getTime();
-    let best = 0;
-    let bestDiff = Infinity;
+    let best = 0, bestDiff = Infinity;
     timestamps.forEach((ts, i) => {
       const diff = Math.abs(ts.getTime() - t);
       if (diff < bestDiff) { bestDiff = diff; best = i; }
@@ -236,28 +113,11 @@ function CookIslandsForecast() {
     setSliderIndex(best);
   }, [capTime.availableTimestamps, setSliderIndex]);
 
-  // Mutual exclusion: only one panel open at a time
-  useEffect(() => {
-    if (showBottomCanvas) setShowBuoyCanvas(false);
-  }, [showBottomCanvas, setShowBuoyCanvas]);
-
-  useEffect(() => {
-    if (showBuoyCanvas) setShowBottomCanvas(false);
-  }, [showBuoyCanvas, setShowBottomCanvas]);
-
-  useRiskOverlay({
-    mapInstance,
-    enabled: activeLayers?.riskPoints !== false,
-    selectedRiskPointId: bottomCanvasData?.mode === 'risk' ? bottomCanvasData?.point?.id : null,
-    setBottomCanvasData,
-    setShowBottomCanvas
-  });
-
   return (
     <div style={widgetContainerStyle}>
       <ModernHeader />
       <ForecastApp
-        WAVE_FORECAST_LAYERS={dynamicLayers}
+        WAVE_FORECAST_LAYERS={ALL_LAYERS}
         ALL_LAYERS={ALL_LAYERS}
         selectedWaveForecast={selectedWaveForecast}
         setSelectedWaveForecast={setSelectedWaveForecast}
@@ -268,51 +128,70 @@ function CookIslandsForecast() {
         totalSteps={totalSteps}
         isPlaying={isPlaying}
         setIsPlaying={setIsPlaying}
+        playSpeedMs={playSpeedMs}
+        setPlaySpeedMs={setPlaySpeedMs}
         currentSliderDate={currentSliderDate}
         capTime={capTime}
+        overlayStats={overlayStats}
         activeLayers={activeLayers}
         setActiveLayers={setActiveLayers}
         mapRef={mapRef}
         mapInstance={mapInstance}
-        setBottomCanvasData={setBottomCanvasData}
-        setShowBottomCanvas={setShowBottomCanvas}
-        isUpdatingVisualization={isUpdatingVisualization}
-        minIndex={minIndex}
-        isBuffering={isBuffering}
+        setBasemap={setBasemap}
+        isUpdatingVisualization={loading}
+        minIndex={0}
+        isBuffering={false}
         inundationThresholds={inundationThresholds}
+        rangeWindow={rangeWindow}
+        setRangeWindow={setRangeWindow}
+        fitBounds={fitBounds}
+        setShowContours={setShowContours}
+        terrainEnabled={terrainEnabled}
+        setTerrainEnabled={setTerrainEnabled}
+        terrainConfig={MAP_TERRAIN_CONFIG}
+        showOrtho2018={showOrtho2018}
+        setShowOrtho2018={setShowOrtho2018}
+        floodDisplayMode={floodDisplayMode}
+        setFloodDisplayMode={setFloodDisplayMode}
+        flood3DConfig={FLOOD_3D_CONFIG}
+        flood3dElevScale={flood3dElevScale}
+        setFlood3dElevScale={setFlood3dElevScale}
       />
 
-      <LegendCleanup 
-        selectedWaveForecast={selectedWaveForecast}
-        WAVE_FORECAST_LAYERS={ALL_LAYERS}
-      />
-      
+      {overlayError && (
+        <div style={{
+          position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(220,53,69,0.92)', color: '#fff', padding: '8px 16px',
+          borderRadius: 8, fontSize: 13, zIndex: 10010, maxWidth: 420, textAlign: 'center',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+        }}>
+          Layer error: {overlayError}
+        </div>
+      )}
+
       <BottomOffCanvas
         show={showBottomCanvas}
         onTimeSelect={handleTimeSelect}
-        onHide={() => {
-          setShowBottomCanvas(false);
-          // Remove any active markers when canvas is hidden
-          if (mapInstance?.current) {
-            mapInstance.current.eachLayer((layer) => {
-              const isCircleMarker = layer instanceof L.CircleMarker && layer.options?.color === '#ff6b35';
-              const isPinMarker = layer instanceof L.Marker && layer.options?.title === 'data-source-pin';
-              if (isCircleMarker || isPinMarker) {
-                mapInstance.current.removeLayer(layer);
-              }
-            });
-          }
-        }}
+        onHide={handleHideBottomCanvas}
         data={bottomCanvasData}
         currentSliderDate={currentSliderDate}
+        onRiskThresholdsSaved={refreshRiskMarkerColors}
       />
       <BottomBuoyOffCanvas
         show={showBuoyCanvas}
         onHide={() => setShowBuoyCanvas(false)}
-        buoyId={selectedBuoyId}
+        buoyId={null}
       />
     </div>
   );
 }
 
 export default CookIslandsForecast;
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+function hexToRgb(hex) {
+  if (!hex || typeof hex !== 'string') return [128, 128, 128];
+  const m = hex.replace('#', '').match(/.{2}/g);
+  if (!m || m.length < 3) return [128, 128, 128];
+  return [parseInt(m[0], 16), parseInt(m[1], 16), parseInt(m[2], 16)];
+}

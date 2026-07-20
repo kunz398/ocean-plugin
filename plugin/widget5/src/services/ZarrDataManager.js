@@ -30,6 +30,7 @@ export default class ZarrDataManager {
     this.prefetchWindow = options.prefetchWindow || 4;
     this.cache = new Map();
     this.loading = new Map(); // Track in-flight requests
+    this.gridCache = new Map(); // meshToGrid() results, keyed by `${timestep}:${variable}:${gridSize}`
     this.metadata = null;
     this.arrays = {};
     
@@ -63,36 +64,35 @@ export default class ZarrDataManager {
       this.nodeCount = this.lon.length;
       
       console.log(`✅ Loaded ${this.nodeCount} mesh nodes`);
-      
-      // Try to load triangles (optional for unstructured mesh)
-      try {
-        this.triangleArray = await openArray({ store: this.store, path: 'mesh_face_node', mode: 'r' });
-        const triData = await this.triangleArray.get(null);
-        this.triangles = new Int32Array(triData.data);
-        
-        // Adjust for 1-based indexing if needed
-        if (this.triangles[0] === 1) {
-          this.triangles = this.triangles.map(i => i - 1);
-        }
-        console.log(`✅ Loaded ${this.triangles.length / 3} triangles`);
-      } catch (e) {
-        console.warn('⚠️  No triangle connectivity found (particle-only mode)');
-        this.triangles = null;
-      }
-      
+
       // Load time coordinates
       try {
         const timeArray = await openArray({ store: this.store, path: 'time', mode: 'r' });
         const timeData = await timeArray.get(null);
-        this.times = Array.from(timeData.data).map(t => new Date(t * 1000).toISOString());
+        const timeUnits = await this._fetchTimeUnits();
+        this.times = Array.from(timeData.data).map((t) => this._decodeTimeValue(t, timeUnits));
         this.timestepCount = this.times.length;
         console.log(`⏱️  ${this.timestepCount} timesteps available`);
       } catch (e) {
-        console.warn('⚠️  No explicit time coordinate found; inferring timestep count from variable shapes when available');
-        this.times = [];
-        this.timestepCount = 0;
+        // zarr.js 0.6.3 has no dtype entry for <i8 (64-bit int) — see
+        // node_modules/zarr/lib/nestedArray/types.js — so any `time` array
+        // encoded that way throws here even though it genuinely exists in
+        // the store (confirmed for rarotonga_ugrid.zarr). UgridOverlay.js
+        // already works around this by reading only the small .zmetadata
+        // JSON (never the broken binary chunk) to recover real timestamps;
+        // apply the same fix here instead of losing them.
+        const synthesized = await this._synthesizeTimesFromMetadata();
+        if (synthesized) {
+          this.times = synthesized;
+          this.timestepCount = synthesized.length;
+          console.log(`⏱️  ${this.timestepCount} timesteps recovered from time/.zattrs metadata (array dtype undecodable by zarr.js, likely <i8)`);
+        } else {
+          console.warn('⚠️  No explicit time coordinate found; inferring timestep count from variable shapes when available');
+          this.times = [];
+          this.timestepCount = 0;
+        }
       }
-      
+
       // Calculate bounds
       this.bounds = [
         Math.min(...this.lon),
@@ -107,7 +107,6 @@ export default class ZarrDataManager {
         nodeCount: this.nodeCount,
         timestepCount: this.timestepCount,
         bounds: this.bounds,
-        hasTriangles: !!this.triangles,
         times: this.times
       };
       
@@ -115,6 +114,75 @@ export default class ZarrDataManager {
     } catch (error) {
       console.error('❌ Failed to initialize ZarrDataManager:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Fetch just the `time` variable's CF `units` attribute (e.g. "hours since
+   * 2026-07-08 06:00:00") via the store's small .zmetadata JSON — cheap and
+   * independent of whether the `time` array's own dtype is decodable.
+   */
+  async _fetchTimeUnits() {
+    try {
+      const resp = await fetch(`${this.zarrUrl}/.zmetadata`);
+      if (!resp.ok) return null;
+      const meta = await resp.json();
+      return meta?.metadata?.['time/.zattrs']?.units ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Parse a CF `"<unit> since <base>"` units string into {baseDate, unitMs}. */
+  _parseTimeUnits(units) {
+    if (!units) return null;
+    const m = units.match(/(seconds|minutes|hours|days)\s+since\s+(.+)/i);
+    if (!m) return null;
+    const unitMs = { seconds: 1e3, minutes: 60e3, hours: 3600e3, days: 86400e3 }[m[1].toLowerCase()];
+    const baseStr = m[2].trim().replace(' ', 'T') + (m[2].includes('Z') ? '' : 'Z');
+    const baseDate = new Date(baseStr);
+    if (isNaN(baseDate)) return null;
+    return { baseDate, unitMs };
+  }
+
+  /**
+   * Decode a raw `time` array value into an ISO string, honoring the CF
+   * `units` convention (e.g. "hours since <base>") when available. Falls
+   * back to treating the value as Unix seconds if `units` is missing/
+   * unparseable, matching this method's original (pre-fix) behavior.
+   */
+  _decodeTimeValue(rawValue, units) {
+    const parsed = this._parseTimeUnits(units);
+    if (parsed) {
+      return new Date(parsed.baseDate.getTime() + rawValue * parsed.unitMs).toISOString();
+    }
+    return new Date(rawValue * 1000).toISOString();
+  }
+
+  /**
+   * Recover timestep count + real timestamps without ever decoding the
+   * `time` array's binary chunk data — used when that array's dtype isn't
+   * supported by zarr.js (see the catch block in init()). Reads time/.zarray
+   * (for shape[0], the step count) and time/.zattrs (for units, to compute
+   * real dates), both plain JSON served from the same .zmetadata document,
+   * and assumes a uniform interval implied by `units` across all steps.
+   */
+  async _synthesizeTimesFromMetadata() {
+    try {
+      const resp = await fetch(`${this.zarrUrl}/.zmetadata`);
+      if (!resp.ok) return null;
+      const meta = await resp.json();
+      const timeCount = meta?.metadata?.['time/.zarray']?.shape?.[0];
+      if (!timeCount) return null;
+
+      const parsed = this._parseTimeUnits(meta?.metadata?.['time/.zattrs']?.units);
+      if (!parsed) return null;
+
+      return Array.from({ length: timeCount }, (_, i) =>
+        new Date(parsed.baseDate.getTime() + i * parsed.unitMs).toISOString()
+      );
+    } catch {
+      return null;
     }
   }
 
@@ -275,65 +343,169 @@ export default class ZarrDataManager {
   /**
    * Get 4 consecutive timesteps for cubic interpolation
    */
-  async getInterpolationWindow(centerTimestep, variables) {
+  /**
+   * The 4 timesteps (t-1, t, t+1, t+2) used for cubic interpolation, clamped to
+   * the available range. Shared by getInterpolationWindow() and callers that
+   * need the timestep list without fetching data (e.g. to drive getGriddedTimestep).
+   */
+  getInterpolationTimesteps(centerTimestep) {
     if (this.timestepCount <= 1) {
-      const fallbackTimestep = Math.max(0, centerTimestep);
-      const data = await this.getTimestepData(fallbackTimestep, variables);
-      return {
-        timesteps: [fallbackTimestep, fallbackTimestep, fallbackTimestep, fallbackTimestep],
-        data: [data, data, data, data]
-      };
+      const t = Math.max(0, centerTimestep);
+      return [t, t, t, t];
     }
-
     const t = centerTimestep;
-    const t_m1 = Math.max(0, t - 1);
-    const t_p1 = Math.min(this.timestepCount - 1, t + 1);
-    const t_p2 = Math.min(this.timestepCount - 1, t + 2);
-    
-    const [data_m1, data_0, data_p1, data_p2] = await Promise.all([
-      this.getTimestepData(t_m1, variables),
-      this.getTimestepData(t, variables),
-      this.getTimestepData(t_p1, variables),
-      this.getTimestepData(t_p2, variables)
-    ]);
-    
-    return {
-      timesteps: [t_m1, t, t_p1, t_p2],
-      data: [data_m1, data_0, data_p1, data_p2]
-    };
+    return [
+      Math.max(0, t - 1),
+      t,
+      Math.min(this.timestepCount - 1, t + 1),
+      Math.min(this.timestepCount - 1, t + 2),
+    ];
+  }
+
+  async getInterpolationWindow(centerTimestep, variables) {
+    const timesteps = this.getInterpolationTimesteps(centerTimestep);
+    const data = await Promise.all(timesteps.map((t) => this.getTimestepData(t, variables)));
+    return { timesteps, data };
   }
 
   /**
-   * Convert unstructured mesh data to regular grid for GPU texture upload
+   * Spatial bucket index over mesh node positions (not values), so it's built
+   * once and reused across every timestep/variable — only node coordinates
+   * change if the mesh itself changes, never the data grid onto it.
+   * Bucket count targets ~4 nodes/bucket so IDW neighbor search stays O(1).
+   */
+  _getSpatialIndex() {
+    if (this._spatialIndex) return this._spatialIndex;
+
+    const [minLon, minLat, maxLon, maxLat] = this.bounds;
+    const lonSpan = (maxLon - minLon) || 1;
+    const latSpan = (maxLat - minLat) || 1;
+    const bucketsPerSide = Math.max(16, Math.round(Math.sqrt(this.nodeCount / 4)));
+    const buckets = new Array(bucketsPerSide * bucketsPerSide);
+    for (let i = 0; i < buckets.length; i++) buckets[i] = [];
+
+    for (let i = 0; i < this.nodeCount; i++) {
+      const bx = Math.min(bucketsPerSide - 1, Math.max(0, Math.floor(((this.lon[i] - minLon) / lonSpan) * bucketsPerSide)));
+      const by = Math.min(bucketsPerSide - 1, Math.max(0, Math.floor(((this.lat[i] - minLat) / latSpan) * bucketsPerSide)));
+      buckets[by * bucketsPerSide + bx].push(i);
+    }
+
+    this._spatialIndex = { buckets, bucketsPerSide, minLon, minLat, lonSpan, latSpan };
+    return this._spatialIndex;
+  }
+
+  /**
+   * Inverse-distance-weighted value at (lon, lat) from the k nearest finite
+   * mesh nodes, found by expanding outward ring-by-ring through the spatial
+   * index. Returns null if no finite node is within range (genuine gap —
+   * left to _fillGridHoles).
+   *
+   * Maintains a fixed-size top-k via insertion (k=8, so worst case is a tiny
+   * O(k) shift) instead of collecting per-candidate objects into an array and
+   * sorting — profiling showed the original version spending ~80% of its time
+   * in JS allocation/sort for this loop (65536 cells x ~20-30 candidates each
+   * was 1M+ short-lived object allocations per grid). This version reuses two
+   * scratch typed arrays across calls instead.
+   */
+  _idwAt(lon, lat, meshData, index, k = 8, power = 2) {
+    const { buckets, bucketsPerSide, minLon, minLat, lonSpan, latSpan } = index;
+    const bx = Math.min(bucketsPerSide - 1, Math.max(0, Math.floor(((lon - minLon) / lonSpan) * bucketsPerSide)));
+    const by = Math.min(bucketsPerSide - 1, Math.max(0, Math.floor(((lat - minLat) / latSpan) * bucketsPerSide)));
+
+    if (!this._idwBestDistSq || this._idwBestDistSq.length !== k) {
+      this._idwBestDistSq = new Float64Array(k);
+      this._idwBestValue = new Float64Array(k);
+    }
+    const bestDistSq = this._idwBestDistSq;
+    const bestValue = this._idwBestValue;
+    let count = 0;
+
+    for (let radius = 0; radius <= bucketsPerSide; radius++) {
+      const yLo = Math.max(0, by - radius), yHi = Math.min(bucketsPerSide - 1, by + radius);
+      for (let cy = yLo; cy <= yHi; cy++) {
+        const dyAbs = Math.abs(cy - by);
+        const xLo = Math.max(0, bx - radius), xHi = Math.min(bucketsPerSide - 1, bx + radius);
+        for (let cx = xLo; cx <= xHi; cx++) {
+          if (Math.max(Math.abs(cx - bx), dyAbs) !== radius) continue; // only this ring's new cells
+          const bucket = buckets[cy * bucketsPerSide + cx];
+          for (let bi = 0; bi < bucket.length; bi++) {
+            const nodeIdx = bucket[bi];
+            const v = meshData[nodeIdx];
+            if (!isFinite(v)) continue;
+            const dlon = this.lon[nodeIdx] - lon;
+            const dlat = this.lat[nodeIdx] - lat;
+            const distSq = dlon * dlon + dlat * dlat;
+
+            if (count < k) {
+              let pos = count;
+              while (pos > 0 && bestDistSq[pos - 1] > distSq) {
+                bestDistSq[pos] = bestDistSq[pos - 1];
+                bestValue[pos] = bestValue[pos - 1];
+                pos--;
+              }
+              bestDistSq[pos] = distSq;
+              bestValue[pos] = v;
+              count++;
+            } else if (distSq < bestDistSq[k - 1]) {
+              let pos = k - 1;
+              while (pos > 0 && bestDistSq[pos - 1] > distSq) {
+                bestDistSq[pos] = bestDistSq[pos - 1];
+                bestValue[pos] = bestValue[pos - 1];
+                pos--;
+              }
+              bestDistSq[pos] = distSq;
+              bestValue[pos] = v;
+            }
+          }
+        }
+      }
+      // One extra ring past first reaching k, so the result isn't biased
+      // toward whichever ring happened to fill the quota first.
+      if (count >= k && radius > 0) break;
+    }
+
+    if (count === 0) return null;
+    if (bestDistSq[0] < 1e-12) return bestValue[0]; // exact/near-exact node hit
+
+    let weightSum = 0, valueSum = 0;
+    for (let i = 0; i < count; i++) {
+      const w = 1 / Math.pow(bestDistSq[i], power / 2);
+      weightSum += w;
+      valueSum += w * bestValue[i];
+    }
+    return valueSum / weightSum;
+  }
+
+  /**
+   * Convert unstructured mesh data to a regular grid for GPU texture upload.
+   *
+   * Was nearest-neighbor-per-node (each node claims its single grid cell,
+   * leaving a discrete "stair-step" field with sharp per-cell boundaries).
+   * Now inverse-distance-weighted from the k nearest mesh nodes per grid
+   * cell, giving a continuous field instead of blocky quantization — the
+   * RK4 particle advection and cubic temporal interpolation downstream can
+   * only be as smooth as the field they're integrating over.
    */
   meshToGrid(meshData, gridSize = 256) {
     const [minLon, minLat, maxLon, maxLat] = this.bounds;
-    const grid = new Float32Array(gridSize * gridSize);
-    grid.fill(NaN);
-    
-    // Simple nearest-neighbor interpolation
-    // For production, use more sophisticated methods (inverse distance weighting, etc.)
-    for (let i = 0; i < this.nodeCount; i++) {
-      const lon = this.lon[i];
-      const lat = this.lat[i];
-      const value = meshData[i];
-      
-      if (!isFinite(value)) continue;
-      
-      const x = Math.floor(((lon - minLon) / (maxLon - minLon)) * (gridSize - 1));
-      const y = Math.floor(((lat - minLat) / (maxLat - minLat)) * (gridSize - 1));
-      
-      if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) {
-        const idx = y * gridSize + x;
-        if (!isFinite(grid[idx]) || Math.abs(value) > Math.abs(grid[idx])) {
-          grid[idx] = value;
-        }
+    const grid = new Float32Array(gridSize * gridSize).fill(NaN);
+    const index = this._getSpatialIndex();
+    const lonSpan = maxLon - minLon;
+    const latSpan = maxLat - minLat;
+
+    for (let gy = 0; gy < gridSize; gy++) {
+      const lat = minLat + (gy / (gridSize - 1)) * latSpan;
+      for (let gx = 0; gx < gridSize; gx++) {
+        const lon = minLon + (gx / (gridSize - 1)) * lonSpan;
+        const value = this._idwAt(lon, lat, meshData, index);
+        if (value !== null) grid[gy * gridSize + gx] = value;
       }
     }
-    
-    // Fill holes with nearest neighbor
+
+    // Safety net for genuine gaps beyond the search radius (e.g. isolated
+    // domain edges) — should rarely fire now that IDW covers most of the area.
     this._fillGridHoles(grid, gridSize);
-    
+
     return grid;
   }
 
@@ -363,20 +535,50 @@ export default class ZarrDataManager {
   }
 
   /**
+   * meshToGrid() is O(nodeCount + gridSize²) and runs synchronously on the main
+   * thread, so scrubbing the time slider (which regrids 4 interpolation-window
+   * timesteps per variable) can get expensive. Cache the gridded result per
+   * (timestep, variable, gridSize) — consecutive timesteps share 3 of their 4
+   * interpolation-window entries, so this cuts repeat regridding substantially.
+   */
+  async getGriddedTimestep(timestep, variables, gridSize) {
+    const data = await this.getTimestepData(timestep, variables);
+    const grids = {};
+    for (const varName of variables) {
+      const key = `${timestep}:${varName}:${gridSize}`;
+      if (!this.gridCache.has(key)) {
+        this.gridCache.set(key, this.meshToGrid(data[varName], gridSize));
+      }
+      grids[varName] = this.gridCache.get(key);
+    }
+    this._evictOldestGrid(timestep);
+    return grids;
+  }
+
+  _evictOldestGrid(currentTimestep) {
+    const maxGridCacheSize = this.cacheSize * 4;
+    if (this.gridCache.size <= maxGridCacheSize) return;
+
+    const entries = Array.from(this.gridCache.keys())
+      .map((key) => ({ key, timestep: parseInt(key.split(':')[0], 10) }))
+      .sort((a, b) => Math.abs(b.timestep - currentTimestep) - Math.abs(a.timestep - currentTimestep));
+
+    entries.slice(0, entries.length - maxGridCacheSize).forEach(({ key }) => this.gridCache.delete(key));
+  }
+
+  /**
    * Prepare velocity field for GPUParticleFlowLayer
    */
   async getVelocityFieldForGPU(centerTimestep, uVar, vVar, gridSize = 256) {
-    const window = await this.getInterpolationWindow(centerTimestep, [uVar, vVar]);
-    
-    const uGrids = window.data.map(d => this.meshToGrid(d[uVar], gridSize));
-    const vGrids = window.data.map(d => this.meshToGrid(d[vVar], gridSize));
-    
+    const timesteps = this.getInterpolationTimesteps(centerTimestep);
+    const grids = await Promise.all(timesteps.map((t) => this.getGriddedTimestep(t, [uVar, vVar], gridSize)));
+
     return {
-      u: uGrids,
-      v: vGrids,
+      u: grids.map((g) => g[uVar]),
+      v: grids.map((g) => g[vVar]),
       width: gridSize,
       height: gridSize,
-      timesteps: window.timesteps
+      timesteps
     };
   }
 
@@ -384,20 +586,45 @@ export default class ZarrDataManager {
    * Prepare scalar field for GPU texture
    */
   async getScalarFieldForGPU(timestep, variable, gridSize = 256) {
-    const data = await this.getTimestepData(timestep, [variable]);
-    const grid = this.meshToGrid(data[variable], gridSize);
-    
+    const grids = await this.getGriddedTimestep(timestep, [variable], gridSize);
+    const grid = grids[variable];
+
     // Calculate min/max for color mapping (excluding NaN)
     const validValues = Array.from(grid).filter(v => isFinite(v));
     const min = Math.min(...validValues);
     const max = Math.max(...validValues);
-    
+
     return {
       values: grid,
       width: gridSize,
       height: gridSize,
       min,
       max
+    };
+  }
+
+  /**
+   * Prepare wave height + direction grids for deck.gl-native particle rendering.
+   * Direction values are kept in degrees; the overlay applies direction convention.
+   */
+  async getWaveDirectionFieldForParticles(timestep, scalarVar = 'hs', directionVar = 'dirm', gridSize = 160) {
+    const grids = await this.getGriddedTimestep(timestep, [scalarVar, directionVar], gridSize);
+    const hsGrid = grids[scalarVar];
+    const dirGrid = grids[directionVar];
+
+    const validHs = Array.from(hsGrid).filter(Number.isFinite);
+    const minHs = validHs.length ? Math.min(...validHs) : 0;
+    const maxHs = validHs.length ? Math.max(...validHs) : 1;
+
+    return {
+      hsGrid,
+      dirGrid,
+      width: gridSize,
+      height: gridSize,
+      bounds: this.bounds,
+      minHs,
+      maxHs,
+      timestep,
     };
   }
 
@@ -415,6 +642,7 @@ export default class ZarrDataManager {
   clearCache() {
     this.cache.clear();
     this.loading.clear();
+    this.gridCache.clear();
     console.log('🧹 Cache cleared');
   }
 }

@@ -70,7 +70,7 @@ export const RegionalConfig = {
     dataInfo: {
       ...UI_CONFIG.dataInfo,
       coverage: 'Niue',
-      timezone: 'Pacific/Rarotonga'
+      timezone: 'Pacific/Niue'
     },
     footer: {
       copyright: '© 2025 Niue Marine Forecast'

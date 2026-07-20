@@ -55,7 +55,6 @@ const createRiskIcon = (point, zoomLevel, isSelected) => {
         position:relative;
         width:${outerSize}px;
         height:${outerSize}px;
-        transform:translate(-50%, -50%);
       ">
         ${ringMarkup}
         <div style="
@@ -66,8 +65,8 @@ const createRiskIcon = (point, zoomLevel, isSelected) => {
           height:${markerSize}px;
           transform:translate(-50%, -50%);
           border-radius:999px;
-          background:${color};
-          border:${isSelected ? 4 : 3}px solid white;
+          background: white;
+          border:${isSelected ? 4 : 3}px solid ${color};
           box-shadow:${isSelected ? `0 0 0 3px ${color}55` : '0 2px 6px rgba(15, 23, 42, 0.35)'};
         "></div>
       </div>

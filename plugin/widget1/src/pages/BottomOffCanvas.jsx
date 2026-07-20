@@ -3,11 +3,18 @@ import Offcanvas from "react-bootstrap/Offcanvas";
 import "./BottomOffCanvas.css";
 import Tabular from "./tabular.js";
 import Timeseries from "./timeseries.js";
+import RiskDetailsPanel from "../components/risk/RiskDetailsPanel";
+import SuitabilityDetailsPanel from "../components/suitability/SuitabilityDetailsPanel";
+import InundationTimeseries from "./InundationTimeseries";
+import LandingAreaDetailsPanel from "../components/landingArea/LandingAreaDetailsPanel";
+import RouteForecastPanel from "../components/route/RouteForecastPanel";
 
 // ---- Variables & config shared between modules ----
 const variableDefs = [
   { key: "hs", label: "Wave{0-5/Bu/1}" },
+  { key: "tm02", label: "Mean Period{0-20/Rd/0}" },
   { key: "tpeak", label: "Wave Period{0-20/Rd/0}" },
+  { key: "dirm", label: "Mean wave direction{0/dir}" },
   { key: "dirp", label: "Wave direction{0/dir}" },
   { key: "transp_x", label: "Wave Energy{calc/0-100/jet/0}" },
   { key: "hs_p2", label: "Swell(m){0-5/Bu/1}" },
@@ -22,7 +29,12 @@ const variableDefs = [
 ];
 
 // ---- Centralized fetching helpers ----
-async function fetchLayerTimeseries(layer, data) {
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Retries once after a short delay — this is a sequence of many independent
+// per-variable requests to the same host, so a single transient network blip
+// on any one of them shouldn't permanently blank that row.
+async function fetchLayerTimeseries(layer, data, attempt = 0) {
   if (!data || !data.bbox || (data.x === undefined && data.i === undefined) || (data.y === undefined && data.j === undefined)) return null;
   let timeParam = "";
   if (data.timeDimension) {
@@ -59,9 +71,14 @@ async function fetchLayerTimeseries(layer, data) {
     `&INFO_FORMAT=text/json`;
   try {
     const response = await fetch(url);
-    if (!response.ok) return null;
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
-  } catch {
+  } catch (err) {
+    if (attempt < 1) {
+      await sleep(300);
+      return fetchLayerTimeseries(layer, data, attempt + 1);
+    }
+    console.warn(`fetchLayerTimeseries: giving up on layer "${layer}" after retry`, err);
     return null;
   }
 }
@@ -69,13 +86,34 @@ async function fetchLayerTimeseries(layer, data) {
 const MIN_HEIGHT = 100;
 const MAX_HEIGHT = 800;
 
+// A flat 500px default was cramped on shorter viewports (laptop windows,
+// tablets in landscape) and left unused space on tall ones — scale with
+// the viewport instead, still clamped to [MIN_HEIGHT, MAX_HEIGHT] and still
+// freely drag-resizable afterward via the handle below.
+function getDefaultHeight() {
+  if (typeof window === 'undefined') return 500;
+  return Math.round(Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, Math.min(window.innerHeight * 0.62, 620))));
+}
+
 const tabLabels = [
   { key: "tabular", label: "Tabular" },
   { key: "timeseries", label: "Timeseries" }
 ];
 
-function BottomOffCanvas({ show, onHide, data }) {
-  const [height, setHeight] = useState(500);
+function BottomOffCanvas({
+  show, onHide, data, currentSliderDate, onTimeSelect, landingAreaTimeseries, seaLevelTimeseries, onRunRouteForecast,
+  suitabilityApiBase, currentTimeIndex,
+  currentRouteInputs, currentModelRunStart,
+  scenarioCount, onConfirmVesselSuggestion,
+  departureSuggestionLoading, departureSuggestionProgress, departureSuggestionResult, departureSuggestionError,
+  onSuggestBetterDeparture, onApplyDepartureSuggestion, onSaveDepartureSuggestionAsScenario,
+}) {
+  const isRiskMode = data?.mode === "risk";
+  const isSuitabilityMode = data?.mode === "suitability";
+  const isInundationMode = data?.mode === "inundation";
+  const isLandingAreaMode = data?.mode === "landing-area";
+  const isRouteForecastMode = data?.mode === "route-forecast";
+  const [height, setHeight] = useState(getDefaultHeight);
   const [activeTab, setActiveTab] = useState("tabular");
   const [perVariableData, setPerVariableData] = useState({});
   const [loading, setLoading] = useState(false);
@@ -85,7 +123,8 @@ function BottomOffCanvas({ show, onHide, data }) {
   // Check for dark mode
   useEffect(() => {
     const checkTheme = () => {
-      const isDark = document.body.classList.contains('dark-mode');
+      const theme = document.documentElement.getAttribute('data-theme');
+      const isDark = theme === 'dark' || document.body.classList.contains('dark-mode');
       setIsDarkMode(isDark);
     };
     
@@ -93,7 +132,7 @@ function BottomOffCanvas({ show, onHide, data }) {
     
     // Listen for theme changes
     const observer = new MutationObserver(checkTheme);
-    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
     
     return () => observer.disconnect();
   }, []);
@@ -126,37 +165,58 @@ function BottomOffCanvas({ show, onHide, data }) {
   // Centralized network fetching
   useEffect(() => {
     let isMounted = true;
+    if (isRiskMode || isSuitabilityMode || isInundationMode || isLandingAreaMode || isRouteForecastMode) {
+      setLoading(false);
+      setFetchError("");
+      return;
+    }
+    if (data?.loading) {
+      setPerVariableData({});
+      setFetchError("");
+      setLoading(true);
+      return () => { isMounted = false; };
+    }
+    if (data?.perVariableData) {
+      setPerVariableData(data.perVariableData);
+      setFetchError("");
+      setLoading(false);
+      return () => { isMounted = false; };
+    }
+
     if (!data || !data.bbox || (data.x === undefined && data.i === undefined) || (data.y === undefined && data.j === undefined)) {
       setPerVariableData({});
-      setFetchError("No data available");
+      setFetchError(data?.error || "No data available");
       return;
     }
     setLoading(true);
     setFetchError("");
     (async () => {
-      const out = {};
-      let transpX, transpY;
-      for (let i = 0; i < variableDefs.length; i++) {
-        const { key } = variableDefs[i];
-        if (key === "transp_x") {
-          // Only fetch both transp_x and transp_y ONCE
-          transpX = await fetchLayerTimeseries("transp_x", data);
-          transpY = await fetchLayerTimeseries("transp_y", data);
-          out["transp_x"] = transpX;
-          out["transp_y"] = transpY;
-        } else if (key === "transp_y") {
-          continue;
-        } else {
-          out[key] = await fetchLayerTimeseries(key, data);
-        }
-      }
+      // Fire every variable's request concurrently instead of one at a time —
+      // sequentially awaiting ~13 round trips to the same host left a long
+      // window where a single transient network failure on any one request
+      // would permanently blank that row (and everything after it looked
+      // fine only by luck of having resolved earlier in the chain).
+      const layerKeys = variableDefs
+        .map(({ key }) => key)
+        .flatMap((key) => (key === "transp_x" ? ["transp_x", "transp_y"] : key === "transp_y" ? [] : [key]));
+
+      const results = await Promise.allSettled(
+        layerKeys.map((key) => fetchLayerTimeseries(key, data))
+      );
+
       if (!isMounted) return;
+
+      const out = {};
+      layerKeys.forEach((key, idx) => {
+        out[key] = results[idx].status === "fulfilled" ? results[idx].value : null;
+      });
+
       setPerVariableData(out);
       setLoading(false);
       if (Object.values(out).every(x => !x)) setFetchError("No data returned from server.");
     })();
     return () => { isMounted = false; };
-  }, [data]);
+  }, [data, isRiskMode, isSuitabilityMode, isInundationMode, isLandingAreaMode, isRouteForecastMode]);
 
   return (
     <Offcanvas
@@ -192,7 +252,9 @@ function BottomOffCanvas({ show, onHide, data }) {
       <div
         className="drag-handle"
         style={{
-          height: 12,
+          height: 22,
+          display: "flex",
+          alignItems: "center",
           cursor: "ns-resize",
           background: isDarkMode ? "#44454a" : "#e0e0e0",
           borderTopLeftRadius: 8,
@@ -208,23 +270,23 @@ function BottomOffCanvas({ show, onHide, data }) {
       >
         <div
           style={{
-            width: 40,
+            width: 44,
             height: 4,
             background: isDarkMode ? "#a1a1aa" : "#aaa",
-            borderRadius: 2,
-            margin: "4px auto",
+            borderRadius: 999,
+            margin: "0 auto",
           }}
         />
       </div>
-      <div style={{ 
-        display: "flex", 
-        alignItems: "center", 
-        borderBottom: `1px solid ${isDarkMode ? "#44454a" : "#eee"}`, 
-        padding: "0 1rem 0 0.5rem" 
+      <div style={{
+        display: "flex",
+        alignItems: "center",
+        borderBottom: `1px solid ${isDarkMode ? "#44454a" : "#eee"}`,
+        padding: "0 1rem 0 0.5rem"
       }}>
         {/* Custom CSS Tabs */}
         <div style={{ display: "flex", flex: 1, paddingTop: 10 }} role="tablist">
-          {tabLabels.map(tab => (
+          {!isRiskMode && !isSuitabilityMode && !isInundationMode && !isLandingAreaMode && !isRouteForecastMode && tabLabels.map(tab => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
@@ -266,21 +328,112 @@ function BottomOffCanvas({ show, onHide, data }) {
           ×
         </button>
       </div>
-      <Offcanvas.Body style={{ 
+      <Offcanvas.Body className={isInundationMode ? "bottom-offcanvas__body--inundation" : undefined} style={{ 
         paddingTop: 16,
-        height: `${height - 60}px`,
-        maxHeight: `${height - 60}px`,
+        // 70 = drag handle (22px, was 12) + the tab/close-button row above this body.
+        height: `${height - 70}px`,
+        maxHeight: `${height - 70}px`,
         overflow: 'auto',
         position: 'relative'
       }}>
-        {loading
+        {isRiskMode
+          ? <RiskDetailsPanel data={data} isDarkMode={isDarkMode} currentSliderDate={currentSliderDate} onTimeSelect={onTimeSelect} />
+          : isSuitabilityMode
+          ? <SuitabilityDetailsPanel data={data} />
+          : isLandingAreaMode
+          ? (
+            <LandingAreaDetailsPanel
+              landingArea={{
+                ...(data?.landingArea ?? {}),
+                statistics_basis: landingAreaTimeseries?.data?.statistics_basis,
+                fallback_reason: landingAreaTimeseries?.data?.fallback_reason,
+                radiusKm: landingAreaTimeseries?.data?.radius_km ?? data?.landingArea?.radiusKm,
+                face_count: landingAreaTimeseries?.data?.face_count,
+                used_nearest_face_fallback: landingAreaTimeseries?.data?.used_nearest_face_fallback,
+                available: landingAreaTimeseries?.data?.available,
+                unavailable_reason: landingAreaTimeseries?.data?.unavailable_reason,
+                land_or_off_mesh: landingAreaTimeseries?.data?.land_or_off_mesh,
+              }}
+              selectedVessel={data?.selectedVessel}
+              steps={landingAreaTimeseries?.data?.steps}
+              loading={landingAreaTimeseries?.loading}
+              error={landingAreaTimeseries?.error}
+              currentSliderDate={currentSliderDate}
+              isDarkMode={isDarkMode}
+              apiBase={suitabilityApiBase}
+              seaLevelTimeseries={seaLevelTimeseries}
+            />
+          )
+          : isRouteForecastMode
+          ? (
+            <RouteForecastPanel
+              data={data}
+              onRetry={onRunRouteForecast}
+              canRetry={(data?.routePoints?.length ?? 0) >= 2 && !data?.loading}
+              currentRouteInputs={currentRouteInputs}
+              currentModelRunStart={currentModelRunStart}
+              scenarioCount={scenarioCount}
+              onConfirmVesselSuggestion={onConfirmVesselSuggestion}
+              departureSuggestionLoading={departureSuggestionLoading}
+              departureSuggestionProgress={departureSuggestionProgress}
+              departureSuggestionResult={departureSuggestionResult}
+              departureSuggestionError={departureSuggestionError}
+              onSuggestBetterDeparture={onSuggestBetterDeparture}
+              onApplyDepartureSuggestion={onApplyDepartureSuggestion}
+              onSaveDepartureSuggestionAsScenario={onSaveDepartureSuggestionAsScenario}
+              seaLevelTimeseries={seaLevelTimeseries}
+              apiBase={suitabilityApiBase}
+              currentTimeIndex={currentTimeIndex}
+            />
+          )
+          : isInundationMode
+          ? data?.loading
+            ? <div style={{ textAlign: "center", padding: "2rem" }}>Loading depth timeseries...</div>
+            : data?.noData
+              ? (
+                <div style={{
+                  textAlign: "center",
+                  padding: "2rem",
+                  color: "rgba(255,255,255,0.55)",
+                  fontSize: 13,
+                  lineHeight: 1.6,
+                }}>
+                  <strong>No flood depth at this location</strong>
+                  <div style={{ marginTop: "0.4rem", fontSize: 12 }}>
+                    This area is not projected to flood during the forecast window.
+                    <br />
+                    Click on a coloured area of the inundation layer to see depth data.
+                  </div>
+                </div>
+              )
+              : data?.error
+                ? (
+                  <div style={{
+                    textAlign: "center",
+                    padding: "2rem",
+                    color: "#f87171",
+                    fontSize: 13,
+                  }}>
+                    Failed to load timeseries: {data.error}
+                  </div>
+                )
+                : <InundationTimeseries
+                    timeseries={data?.timeseries}
+                    categories={data?.categories}
+                    rangeWindow={data?.rangeWindow}
+                    isDarkMode={isDarkMode}
+                    currentSliderDate={currentSliderDate}
+                    onTimeSelect={onTimeSelect}
+                    seaLevelTimeseries={seaLevelTimeseries}
+                  />
+          : loading
           ? <div style={{ textAlign: "center", padding: "2rem" }}>Loading data...</div>
           : fetchError
               ? <div style={{ color: "red", textAlign: "center" }}>{fetchError}</div>
               : <>
                   {activeTab === "tabular" && <Tabular perVariableData={perVariableData} />}
                   {activeTab === "timeseries" && <Timeseries perVariableData={perVariableData} />}
-                  
+
                 </>
         }
       </Offcanvas.Body>

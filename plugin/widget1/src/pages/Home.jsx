@@ -1,294 +1,519 @@
-import React, { useEffect, useMemo, useState, useRef } from "react";
-import "leaflet/dist/leaflet.css";
-import L from "leaflet";
-import addWMSTileLayer from "./addWMSTileLayer";
-import BottomOffCanvas from "./BottomOffCanvas";
-import BottomBuoyOffCanvas from "./BottomBuoyOffCanvas";
-import { useForecast } from "../hooks/useForecastComposed";
-import ForecastApp from "../components/ForecastApp";
-import ModernHeader from "../components/ModernHeader";
-import WorldClassVisualization from "../utils/WorldClassVisualization";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import 'maplibre-gl/dist/maplibre-gl.css';
+import maplibregl from 'maplibre-gl';
+import BottomOffCanvas from './BottomOffCanvas';
+import BottomBuoyOffCanvas from './BottomBuoyOffCanvas';
+import ForecastApp from '../components/ForecastApp';
+import ModernHeader from '../components/ModernHeader';
+import { MAP_LAYERS, findLayerById } from '../lib/mapLayersConfig';
+import { useZarrMap } from '../hooks/useZarrMap';
+import useInundationThresholds from '../hooks/useInundationThresholds';
+import { useLandingAreaTimeseries } from '../hooks/useLandingAreaTimeseries';
+import { useSeaLevelTimeseries } from '../hooks/useSeaLevelTimeseries';
+import { fetchRouteForecast, parseRouteFile } from '../services/routeForecastService';
+import {
+  MAX_SCENARIOS,
+  createScenario,
+  duplicateScenario,
+  findBetterDeparture,
+  runAllScenarios,
+  runScenario,
+} from '../services/scenarioService';
 
-// Initialize world-class visualization system
-const worldClassViz = new WorldClassVisualization();
-
-// World-class legend URL generator
-const getWorldClassLegendUrl = (variable, range, unit) => {
-  return worldClassViz.getWorldClassLegendUrl(variable, range, unit);
+const widgetContainerStyle = {
+  position: 'fixed',
+  top: 0,
+  left: 0,
+  width: '100vw',
+  height: '100dvh',
+  zIndex: 9999,
 };
 
-// PERFORMANCE: Use static configuration instead of async data fetching
-// This matches Widget5 and Widget11 approach for faster initial load
+const NIUE_BUOYS = [
+  { id: 'SPOT-31153C', lon: -169.9024667, lat: -18.9747 },
+  { id: 'SPOT-31071C', lon: -169.98535, lat: -19.0662333 },
+  { id: 'SPOT-31091C', lon: -169.9315, lat: -19.05455, highlight: true },
+];
 
-// Static configuration for Niue wave parameters (no async fetching needed)
-const variableConfigMap = {
-  hs: (maxHeight) => worldClassViz.getAdaptiveWaveHeightConfig(maxHeight, "tropical"),
-  tm02: () => ({
-    palette: 'psu-viridis',
-    range: '0,12',  // Static range based on Niue climatology
-    numcolorbands: 250
-  }),
-  tpeak: () => ({
-    palette: 'psu-viridis',
-    range: '0,17.4',  // Static range based on Niue climatology
-    numcolorbands: 250
-  }),
-  dirm: () => ({
-    palette: 'black-arrow',
-    range: '',
-    numcolorbands: 0
-  }),
-  inundation: () => ({
-    style: "default-scalar/x-Sst",
-    colorscalerange: "-0.05,9",
-    numcolorbands: 250,
-    belowmincolor: "transparent",
-    abovemaxcolor: "extend"
-  })
-};
-
-// Niue-specific WMS configuration - using ncWMS server like Cook Islands
-const NIUE_WMS_BASE = "https://gem-ncwms-hpc.spc.int/ncWMS/wms";
-
-function Home({ widgetData, validCountries }) {
-  // PERFORMANCE FIX: Define layers with useMemo and static legendUrl (like Widget5/11)
-  // This eliminates async data fetching that was causing slow initial load
-  const WAVE_FORECAST_LAYERS = useMemo(() => [
-    {
-      label: "Significant Wave Height + Dir",
-      value: "composite_hs_dirm",
-      composite: true,
-      wmsUrl: NIUE_WMS_BASE,
-      legendUrl: getWorldClassLegendUrl('hs', '0,4', 'm'),
-      layers: [
-        {
-          value: "niue_forecast/hs",
-          style: "default-scalar/x-Sst",
-          colorscalerange: "0,4",
-          wmsUrl: NIUE_WMS_BASE,
-          dataset: "niue_forecast",
-          numcolorbands: 250,
-          zIndex: 1,
-        },
-        {
-          value: "dirm", // THREDDS layer name (without dataset prefix)
-          style: "black-arrow",
-          colorscalerange: "",
-          wmsUrl: "https://gemthreddshpc.spc.int/thredds/wms/POP/model/country/spc/forecast/hourly/NIU/ForecastNiue_latest.nc",
-          zIndex: 2,
-          opacity: 0.9,
-        }
-      ]
-    },
-    {
-      label: "Mean Wave Period",
-      value: "niue_forecast/tm02",
-      wmsUrl: NIUE_WMS_BASE,
-      dataset: "niue_forecast",
-      style: "default-scalar/x-Sst",
-      colorscalerange: "0,12",
-      numcolorbands: 250,
-      legendUrl: getWorldClassLegendUrl('tm02', '0,12', 's'),
-    },
-    {
-      label: "Peak Wave Period",
-      value: "niue_forecast/tpeak",
-      wmsUrl: NIUE_WMS_BASE,
-      dataset: "niue_forecast",
-      style: "default-scalar/x-Sst",
-      colorscalerange: "0,17.4",
-      numcolorbands: 250,
-      legendUrl: getWorldClassLegendUrl('tpeak', '0,17.4', 's'),
-    },
-    {
-      label: "Inundation Depth",
-      value: "inundation",
-      wmsUrl: "https://gemthreddshpc.spc.int/thredds/wms/POP/model/country/spc/forecast/hourly/NIU/InundationNiue_latest.nc",
-      dataset: "niue_inundation",
-      style: "default-scalar/x-Sst",
-      colorscalerange: "-0.05,9",
-      numcolorbands: 250,
-      belowmincolor: "transparent",
-      abovemaxcolor: "extend",
-      legendUrl: getWorldClassLegendUrl('inundation', '-0.05,9', 'm'),
-    }
-  ], []);
-  // Buoy state management
+function Home() {
+  const allLayers = useMemo(() => MAP_LAYERS, []);
+  const [selectedWaveForecast, setSelectedWaveForecast] = useState(allLayers[0]?.value ?? '');
+  const [wmsOpacity, setWmsOpacity] = useState(1);
+  // riskPoints defaults to false: Niue has no risk/points.json published on
+  // THREDDS yet (unlike Cook Islands). The fetch/render code is wired and
+  // ready — flip this once SPC publishes NIU/risk/points.json.
+  const [activeLayers, setActiveLayers] = useState({ waveForecast: true, riskPoints: false });
+  const [sliderIndex, setSliderIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playSpeedMs, setPlaySpeedMs] = useState(700);
+  const [waveParticleMode, setWaveParticleMode] = useState('off');
+  const [particleQuality, setParticleQuality] = useState('balanced');
+  const [swellSourcesEnabled, setSwellSourcesEnabled] = useState(false);
+  const [selectedVessel, setSelectedVessel] = useState('traditional_craft');
+  const [showBottomCanvas, setShowBottomCanvas] = useState(false);
+  const [bottomCanvasData, setBottomCanvasData] = useState(null);
   const [showBuoyCanvas, setShowBuoyCanvas] = useState(false);
   const [selectedBuoyId, setSelectedBuoyId] = useState(null);
   const buoyMarkersRef = useRef([]);
 
-  // Initialize Leaflet marker icons
+  // Landing-area advisory: a persistent, user-selected launch point (preset or
+  // clicked), distinct from the transient click-to-query pin in useZarrMap.js.
+  const [landingArea, setLandingArea] = useState(null); // {label, lon, lat, source:'preset'|'click'}
+  const [landingAreaPickMode, setLandingAreaPickMode] = useState(false);
+  const landingMarkerRef = useRef(null);
+  const suitabilityApiBase = findLayerById('niue-suitability')?.apiBase ?? '';
+  const landingAreaTimeseries = useLandingAreaTimeseries(landingArea, selectedVessel, suitabilityApiBase);
+  const [routePoints, setRoutePoints] = useState([]);
+  const [routePickMode, setRoutePickMode] = useState(false);
+  const [routeSpeedKt, setRouteSpeedKt] = useState(8);
+  const [routeDepartureTime, setRouteDepartureTime] = useState('');
+  const [routeForecastResult, setRouteForecastResult] = useState(null);
+  const [routeForecastLoading, setRouteForecastLoading] = useState(false);
+  const [routeForecastError, setRouteForecastError] = useState('');
+
+  // Scenario comparison: saved snapshots of route/vessel/speed/departure,
+  // each independently run against /niue/suitability/route and kept
+  // side-by-side, unlike routeForecastResult above which is a single slot
+  // that gets clobbered on every new run.
+  const [scenarios, setScenarios] = useState([]);
+  const [runningScenarioIds, setRunningScenarioIds] = useState([]);
+  // Set to the scenario's id right after "Confirm & compare" creates it, so
+  // the sidebar's ScenarioComparisonPanel can scroll to and briefly highlight
+  // that specific card — the confirm button lives in a different part of the
+  // screen (the route-forecast results panel) than where its result appears.
+  const [confirmedScenarioId, setConfirmedScenarioId] = useState(null);
+
+  // Route-forecast suggestions: "suggest a better vessel" is computed
+  // client-side inline in RouteForecastPanel (no state needed here — see
+  // handleConfirmVesselSuggestion below for its one-call confirm step).
+  // "Suggest better departure" makes several real backend calls, so its
+  // progress/result live here alongside the other routeForecast* state it
+  // parallels.
+  const [departureSuggestionLoading, setDepartureSuggestionLoading] = useState(false);
+  const [departureSuggestionProgress, setDepartureSuggestionProgress] = useState(null);
+  const [departureSuggestionResult, setDepartureSuggestionResult] = useState(null);
+  const [departureSuggestionError, setDepartureSuggestionError] = useState('');
+
+  // Describes a specific route/vessel/speed/departure snapshot — if any of
+  // those change, or a fresh route forecast is run, a stale suggestion must
+  // not be applyable/exportable against inputs it no longer describes.
+  const clearRouteSuggestions = useCallback(() => {
+    setDepartureSuggestionResult(null);
+    setDepartureSuggestionError('');
+  }, []);
+
   useEffect(() => {
-    delete L.Icon.Default.prototype._getIconUrl;
-    L.Icon.Default.mergeOptions({
-      iconRetinaUrl: require("leaflet/dist/images/marker-icon-2x.png"),
-      iconUrl: require("leaflet/dist/images/marker-icon.png"),
-      shadowUrl: require("leaflet/dist/images/marker-shadow.png"),
+    clearRouteSuggestions();
+  }, [routePoints, selectedVessel, routeSpeedKt, routeDepartureTime, clearRouteSuggestions]);
+
+  // Landing-area pick and route-point pick are two independent toggles that
+  // both put the map into "next click does something special" mode. Nothing
+  // previously stopped both being on at once, which made a map click
+  // ambiguous (only landingAreaPickMode actually won, per useZarrMap's
+  // branch order — but the route toggle stayed lit as if it were still
+  // live). Force them mutually exclusive at the point of turning one on.
+  const handleSetLandingAreaPickMode = useCallback((valueOrUpdater) => {
+    setLandingAreaPickMode((prev) => {
+      const next = typeof valueOrUpdater === 'function' ? valueOrUpdater(prev) : valueOrUpdater;
+      if (next) setRoutePickMode(false);
+      return next;
     });
   }, []);
 
-  // Define map bounds around Niue (approximate domain)
-  const niueBounds = useMemo(() => {
-    const southWest = L.latLng(-19.5, -170.5);
-    const northEast = L.latLng(-18.5, -169.3);
-    return L.latLngBounds(southWest, northEast);
+  const handleSetRoutePickMode = useCallback((valueOrUpdater) => {
+    setRoutePickMode((prev) => {
+      const next = typeof valueOrUpdater === 'function' ? valueOrUpdater(prev) : valueOrUpdater;
+      if (next) setLandingAreaPickMode(false);
+      return next;
+    });
   }, []);
 
-  // PERFORMANCE FIX: Use static layer definitions with useMemo (like Widget5/11)
-  // Eliminates async data fetching that was causing slow initial load
-  const STATIC_LAYERS = useMemo(() => [], []);
-  const ALL_LAYERS = useMemo(() => ([...WAVE_FORECAST_LAYERS, ...STATIC_LAYERS]), [WAVE_FORECAST_LAYERS, STATIC_LAYERS]);
+  const handleLandingAreaPick = useCallback((lng, lat) => {
+    setLandingArea({ label: 'Custom location', lon: lng, lat, source: 'click' });
+    setLandingAreaPickMode(false);
+  }, []);
 
-  const config = useMemo(
-    () => ({
-      WAVE_FORECAST_LAYERS,
-      STATIC_LAYERS,
-      ALL_LAYERS,
-      WAVE_BUOYS: [
-        {
-          id: "SPOT-31153C",
-          lon: -169.9024667,
-          lat: -18.9747,
-        },
-        {
-          id: "SPOT-31071C",
-          lon: -169.98535,
-          lat: -19.0662333,
-        },
-        {
-          id: "SPOT-31091C",
-          lon: -169.9315,
-          lat: -19.05455,
-        },
-      ],
-      bounds: niueBounds,
-      addWMSTileLayer,
-    }), [WAVE_FORECAST_LAYERS, STATIC_LAYERS, ALL_LAYERS, niueBounds]
-  );
+  const handleRoutePointPick = useCallback((lng, lat) => {
+    setRoutePoints((points) => [...points, { lon: lng, lat }]);
+    setRouteForecastResult(null);
+    setRouteForecastError('');
+  }, []);
 
-  const {
-    // Layers
-    activeLayers, setActiveLayers,
-    selectedWaveForecast, setSelectedWaveForecast,
-    // Time & Animation
-    capTime,
-    sliderIndex, setSliderIndex,
-    totalSteps,
-    isPlaying, setIsPlaying,
-    currentSliderDate,
-    currentSliderDateStr,
-    minIndex,
-    // Map
-    mapRef, mapInstance,
-    // Opacity
-    wmsOpacity, setWmsOpacity,
-    // Dynamic layers
-    dynamicLayers,
-    isUpdatingVisualization,
-    // Bottom canvases
-    showBottomCanvas, setShowBottomCanvas,
-    bottomCanvasData, setBottomCanvasData,
-  } = useForecast(config);
+  const handleClearRoute = useCallback(() => {
+    setRoutePoints([]);
+    setRouteForecastResult(null);
+    setRouteForecastError('');
+    setRoutePickMode(false);
+  }, []);
 
-  // Buoy functionality
-  const openBuoyCanvas = (buoyId) => {
-    console.log("openBuoyCanvas called with:", buoyId);
-    setShowBottomCanvas(false);
-    setSelectedBuoyId(buoyId);
-    setShowBuoyCanvas(true);
-    console.log("State after setting:", { showBuoyCanvas: true, selectedBuoyId: buoyId });
-  };
+  const handleUndoRoutePoint = useCallback(() => {
+    setRoutePoints((points) => points.slice(0, -1));
+    setRouteForecastResult(null);
+    setRouteForecastError('');
+  }, []);
 
-  // Ensure only one canvas is open at a time
-  useEffect(() => {
-    if (showBottomCanvas) {
-      setShowBuoyCanvas(false);
+  const handleRouteImport = useCallback(async (file) => {
+    try {
+      const points = await parseRouteFile(file);
+      setRoutePoints(points);
+      setRouteForecastResult(null);
+      setRouteForecastError('');
+      setRoutePickMode(false);
+    } catch (err) {
+      setRouteForecastError(err.message || 'Imported route could not be read.');
     }
+  }, []);
+
+  useEffect(() => {
+    if (showBottomCanvas) setShowBuoyCanvas(false);
   }, [showBottomCanvas]);
 
-  // Auto-zoom when Inundation layer is selected
   useEffect(() => {
-    if (selectedWaveForecast === 'inundation' && mapInstance.current) {
-      mapInstance.current.setZoom(15);
-    }
-  }, [selectedWaveForecast, mapInstance]);
+    if (showBuoyCanvas) setShowBottomCanvas(false);
+  }, [showBuoyCanvas]);
 
-  // Buoy marker icons
-  const blueIcon = new L.Icon({
-    iconUrl: require("leaflet/dist/images/marker-icon.png"),
-    shadowUrl: require("leaflet/dist/images/marker-shadow.png"),
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41]
+  const inundationThresholds = useInundationThresholds();
+
+  const {
+    mapRef,
+    mapInstance,
+    timeCount,
+    currentSliderDate,
+    capTime,
+    loading,
+    error: overlayError,
+    overlayStats,
+    fitBounds,
+    setBasemap,
+    removePinMarker,
+  } = useZarrMap({
+    selectedLayerId: selectedWaveForecast,
+    sliderIndex,
+    setSliderIndex,
+    isPlaying,
+    setIsPlaying,
+    playSpeedMs,
+    opacity: wmsOpacity,
+    thresholds: null,
+    inundationCategories: inundationThresholds.categories,
+    minVisibleDepth: inundationThresholds.minVisibleDepth,
+    riskEnabled: activeLayers?.riskPoints !== false,
+    setBottomCanvasData,
+    setShowBottomCanvas,
+    waveParticleMode,
+    particleQuality,
+    swellSourcesEnabled,
+    selectedVessel,
+    landingAreaPickMode,
+    onLandingAreaPick: handleLandingAreaPick,
+    routePickMode,
+    onRoutePointPick: handleRoutePointPick,
+    routePoints,
+    routeForecastResult,
   });
 
-  const greenIcon = new L.Icon({
-    iconUrl: 'data:image/svg+xml;base64,' + btoa(`
-      <svg width="25" height="41" viewBox="0 0 25 41" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12.5,0C5.6,0,0,5.6,0,12.5c0,12.5,12.5,28.5,12.5,28.5s12.5-16,12.5-28.5C25,5.6,19.4,0,12.5,0z" fill="#22c55e"/>
-        <circle cx="12.5" cy="12.5" r="5" fill="white"/>
-      </svg>
-    `),
-    shadowUrl: require("leaflet/dist/images/marker-shadow.png"),
-    iconSize: [25, 41],
-    iconAnchor: [12, 41],
-    popupAnchor: [1, -34],
-    shadowSize: [41, 41]
-  });
+  const seaLevelStartTime = capTime.availableTimestamps?.[0]?.toISOString?.() ?? null;
+  const seaLevelEndTime = capTime.availableTimestamps?.[capTime.availableTimestamps.length - 1]?.toISOString?.() ?? null;
+  const seaLevelTimeseries = useSeaLevelTimeseries(
+    suitabilityApiBase,
+    seaLevelStartTime,
+    seaLevelEndTime,
+    showBottomCanvas
+  );
 
-  // Buoy markers management (when topographic layer is active)
-  useEffect(() => {
-    if (!mapInstance?.current) return;
+  const totalSteps = Math.max(1, timeCount) - 1;
 
-    // Remove existing markers
-    buoyMarkersRef.current.forEach(marker => marker.remove());
-    buoyMarkersRef.current = [];
-    
-    // Only show buoy markers when topographic layer is visible
-    if (!activeLayers["stamen-toner"]) return;
-    
-    console.log("Creating buoy markers...");
-
-    const WAVE_BUOYS = config.WAVE_BUOYS || [];
-    buoyMarkersRef.current = WAVE_BUOYS.map(buoy => {
-      let marker;
-      if (buoy.id === "SPOT-31091C"){
-        marker = L.marker([buoy.lat, buoy.lon], {
-          title: buoy.id,
-          icon: greenIcon,
-          zIndexOffset: 1000,
-        }).addTo(mapInstance.current);
-      } else{
-        marker = L.marker([buoy.lat, buoy.lon], {
-          title: buoy.id,
-          icon: blueIcon,
-          zIndexOffset: 1000,
-        }).addTo(mapInstance.current);
-      }
-      marker.bindPopup(`<b>${buoy.id}</b><br>Lat: ${buoy.lat}<br>Lon: ${buoy.lon}`);
-      marker.on("click", (e) => {
-        console.log("Buoy marker clicked:", buoy.id);
-        e.originalEvent.stopPropagation();
-        openBuoyCanvas(buoy.id);
+  const handleRunRouteForecast = useCallback(async () => {
+    const departureTime = routeDepartureTime || currentSliderDate?.toISOString?.();
+    clearRouteSuggestions(); // a fresh result invalidates suggestions computed against the old one
+    setRouteForecastLoading(true);
+    setRouteForecastError('');
+    setBottomCanvasData({ mode: 'route-forecast', loading: true, routePoints, selectedVessel, speedKt: routeSpeedKt });
+    setShowBottomCanvas(true);
+    try {
+      const result = await fetchRouteForecast(suitabilityApiBase, {
+        routePoints,
+        vessel: selectedVessel,
+        departureTime,
+        speedKt: routeSpeedKt,
       });
-      console.log("Created marker for buoy:", buoy.id);
-      return marker;
+      setRouteForecastResult(result);
+      setBottomCanvasData({
+        mode: 'route-forecast',
+        routePoints,
+        selectedVessel,
+        speedKt: routeSpeedKt,
+        departureTime,
+        result,
+        // Provenance: when this was fetched, and which forecast window was
+        // active at the time — see RouteForecastPanel's rerun/superseded
+        // banners, and scenarioService's isScenarioSuperseded.
+        generatedAt: new Date().toISOString(),
+        modelRunStartAtFetch: capTime.modelRunStart,
+      });
+      setShowBottomCanvas(true);
+    } catch (err) {
+      const message = err.message || 'Route forecast failed. Please try again.';
+      setRouteForecastError(message);
+      setRouteForecastResult(null);
+      setBottomCanvasData({
+        mode: 'route-forecast',
+        routePoints,
+        selectedVessel,
+        speedKt: routeSpeedKt,
+        departureTime,
+        error: message,
+      });
+      setShowBottomCanvas(true);
+    } finally {
+      setRouteForecastLoading(false);
+    }
+  }, [currentSliderDate, routeDepartureTime, routePoints, routeSpeedKt, selectedVessel, suitabilityApiBase, capTime.modelRunStart, clearRouteSuggestions]);
+
+  // ── Scenario comparison ─────────────────────────────────────────────────
+  const handleSaveCurrentAsScenario = useCallback(() => {
+    setScenarios((prev) => {
+      if (prev.length >= MAX_SCENARIOS || routePoints.length < 2) return prev;
+      const departureTime = routeDepartureTime || currentSliderDate?.toISOString?.() || '';
+      return [...prev, createScenario({
+        vessel: selectedVessel,
+        routePoints,
+        departureTime,
+        speedKt: routeSpeedKt,
+        existingScenarios: prev,
+      })];
     });
+  }, [currentSliderDate, routeDepartureTime, routePoints, routeSpeedKt, selectedVessel]);
+
+  const handleDuplicateScenario = useCallback((scenarioId) => {
+    setScenarios((prev) => {
+      if (prev.length >= MAX_SCENARIOS) return prev;
+      const original = prev.find((s) => s.id === scenarioId);
+      if (!original) return prev;
+      return [...prev, duplicateScenario(original, {}, prev)];
+    });
+  }, []);
+
+  const handleRemoveScenario = useCallback((scenarioId) => {
+    setScenarios((prev) => prev.filter((s) => s.id !== scenarioId));
+    setRunningScenarioIds((prev) => prev.filter((id) => id !== scenarioId));
+  }, []);
+
+  const handleRunScenario = useCallback(async (scenarioId) => {
+    const target = scenarios.find((s) => s.id === scenarioId);
+    if (!target) return;
+    setRunningScenarioIds((prev) => (prev.includes(scenarioId) ? prev : [...prev, scenarioId]));
+    setScenarios((prev) => prev.map((s) => (s.id === scenarioId ? { ...s, status: 'running' } : s)));
+    const updated = await runScenario(suitabilityApiBase, target, { modelRunStart: capTime.modelRunStart });
+    setScenarios((prev) => prev.map((s) => (s.id === scenarioId ? updated : s)));
+    setRunningScenarioIds((prev) => prev.filter((id) => id !== scenarioId));
+  }, [scenarios, suitabilityApiBase, capTime.modelRunStart]);
+
+  const handleRunAllScenarios = useCallback(async () => {
+    if (!scenarios.length) return;
+    const ids = scenarios.map((s) => s.id);
+    setRunningScenarioIds(ids);
+    setScenarios((prev) => prev.map((s) => (ids.includes(s.id) ? { ...s, status: 'running' } : s)));
+    await runAllScenarios(suitabilityApiBase, scenarios, {
+      modelRunStart: capTime.modelRunStart,
+      onScenarioSettled: (updated) => {
+        setScenarios((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+        setRunningScenarioIds((prev) => prev.filter((id) => id !== updated.id));
+      },
+    });
+  }, [scenarios, suitabilityApiBase, capTime.modelRunStart]);
+
+  // ── Route-forecast suggestions ──────────────────────────────────────────
+
+  // Feature A's initial suggestion is computed inline in RouteForecastPanel
+  // (pure, no fetch). This "Confirm & compare" step is its only network call:
+  // exactly one real fetchRouteForecast (via the existing runScenario), which
+  // becomes a normal comparable scenario — no bespoke fetch logic needed.
+  const handleConfirmVesselSuggestion = useCallback(async (vesselCode) => {
+    if (!vesselCode || scenarios.length >= MAX_SCENARIOS) return;
+    const departureTime = routeForecastResult?.departure_time || routeDepartureTime || currentSliderDate?.toISOString?.() || '';
+    const draft = createScenario({
+      vessel: vesselCode, routePoints, departureTime, speedKt: routeSpeedKt, existingScenarios: scenarios,
+    });
+    setScenarios((prev) => [...prev, draft]);
+    setRunningScenarioIds((prev) => [...prev, draft.id]);
+    const updated = await runScenario(suitabilityApiBase, draft, { modelRunStart: capTime.modelRunStart });
+    setScenarios((prev) => prev.map((s) => (s.id === draft.id ? updated : s)));
+    setRunningScenarioIds((prev) => prev.filter((id) => id !== draft.id));
+    setConfirmedScenarioId(updated.id);
+    return updated;
+  }, [scenarios, routeForecastResult, routeDepartureTime, currentSliderDate, routePoints, routeSpeedKt, suitabilityApiBase, capTime.modelRunStart]);
+
+  const handleSuggestBetterDeparture = useCallback(async () => {
+    if (!routeForecastResult || departureSuggestionLoading) return;
+    setDepartureSuggestionLoading(true);
+    setDepartureSuggestionError('');
+    setDepartureSuggestionResult(null);
+    setDepartureSuggestionProgress(null);
+    try {
+      const result = await findBetterDeparture(suitabilityApiBase, {
+        routePoints,
+        vessel: selectedVessel,
+        departureTime: routeForecastResult.departure_time,
+        speedKt: routeSpeedKt,
+      }, { onProgress: setDepartureSuggestionProgress });
+      setDepartureSuggestionResult(result);
+      if (!result) setDepartureSuggestionError('No better departure window found in the next 24 hours.');
+    } catch (err) {
+      setDepartureSuggestionError(err.message || 'Could not check alternative departure times.');
+    } finally {
+      setDepartureSuggestionLoading(false);
+      setDepartureSuggestionProgress(null);
+    }
+  }, [routeForecastResult, departureSuggestionLoading, suitabilityApiBase, routePoints, selectedVessel, routeSpeedKt]);
+
+  // Applies an already-fetched suggestion directly — no redundant re-fetch,
+  // we already have the real result from findBetterDeparture. Setting
+  // routeDepartureTime triggers the clearRouteSuggestions effect above,
+  // which is fine: departureTime/result are already captured locally here.
+  const handleApplyDepartureSuggestion = useCallback(() => {
+    if (!departureSuggestionResult) return;
+    const { departureTime, result } = departureSuggestionResult;
+    setRouteDepartureTime(departureTime.slice(0, 16));
+    setRouteForecastResult(result);
+    setBottomCanvasData({
+      mode: 'route-forecast',
+      routePoints, selectedVessel, speedKt: routeSpeedKt, departureTime,
+      result,
+      generatedAt: new Date().toISOString(),
+      modelRunStartAtFetch: capTime.modelRunStart,
+    });
+    setShowBottomCanvas(true);
+  }, [departureSuggestionResult, routePoints, selectedVessel, routeSpeedKt, capTime.modelRunStart]);
+
+  // Also skips a redundant re-fetch — builds a ready scenario directly from
+  // the result findBetterDeparture already confirmed.
+  const handleSaveDepartureSuggestionAsScenario = useCallback(() => {
+    if (!departureSuggestionResult || scenarios.length >= MAX_SCENARIOS) return;
+    const { departureTime, result } = departureSuggestionResult;
+    const now = new Date().toISOString();
+    const draft = createScenario({
+      vessel: selectedVessel, routePoints, departureTime, speedKt: routeSpeedKt, existingScenarios: scenarios,
+    });
+    setScenarios((prev) => [...prev, {
+      ...draft, status: 'ready', forecastResult: result, updatedAt: now, generatedAt: now, modelRunStartAtRun: capTime.modelRunStart,
+    }]);
+  }, [departureSuggestionResult, scenarios, selectedVessel, routePoints, routeSpeedKt, capTime.modelRunStart]);
+
+  useEffect(() => {
+    if (!routeDepartureTime && currentSliderDate) {
+      setRouteDepartureTime(currentSliderDate.toISOString().slice(0, 16));
+    }
+  }, [currentSliderDate, routeDepartureTime]);
+
+  const handleHideBottomCanvas = useCallback(() => {
+    setShowBottomCanvas(false);
+    removePinMarker?.();
+  }, [removePinMarker]);
+
+  const handleTimeSelect = useCallback((date) => {
+    const timestamps = capTime.availableTimestamps;
+    if (!timestamps?.length || !date) return;
+    const target = date.getTime();
+    let bestIndex = 0;
+    let bestDiff = Infinity;
+
+    timestamps.forEach((timestamp, index) => {
+      const diff = Math.abs(timestamp.getTime() - target);
+      if (diff < bestDiff) {
+        bestDiff = diff;
+        bestIndex = index;
+      }
+    });
+
+    setSliderIndex(bestIndex);
+  }, [capTime.availableTimestamps]);
+
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map) return undefined;
+
+    buoyMarkersRef.current.forEach((marker) => marker.remove());
+    buoyMarkersRef.current = [];
+
+    buoyMarkersRef.current = NIUE_BUOYS.map((buoy) => {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.title = buoy.id;
+      el.className = 'maplibre-buoy-marker';
+      el.style.cssText = [
+        'width:22px',
+        'height:22px',
+        'border-radius:50%',
+        'border:3px solid #ffffff',
+        `background:${buoy.highlight ? '#22c55e' : '#0ea5e9'}`,
+        'box-shadow:0 2px 8px rgba(0,0,0,0.35)',
+        'cursor:pointer',
+      ].join(';');
+      el.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setSelectedBuoyId(buoy.id);
+        setShowBuoyCanvas(true);
+      });
+
+      return new maplibregl.Marker({ element: el })
+        .setLngLat([buoy.lon, buoy.lat])
+        .addTo(map);
+    });
+
     return () => {
-      buoyMarkersRef.current.forEach(marker => marker.remove());
+      buoyMarkersRef.current.forEach((marker) => marker.remove());
       buoyMarkersRef.current = [];
     };
-    // eslint-disable-next-line
-  }, [activeLayers["stamen-toner"], mapInstance.current, config.WAVE_BUOYS]);
+  }, [mapInstance]);
+
+  // Persistent landing-area flag marker — separate from useZarrMap's
+  // transient click-query pin (pinMarkerRef/addPinMarker/removePinMarker).
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (!map) return undefined;
+
+    landingMarkerRef.current?.remove();
+    landingMarkerRef.current = null;
+    if (!landingArea) return undefined;
+
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.title = landingArea.label;
+    el.className = 'landing-area-flag-marker';
+    el.style.cssText = [
+      'width:26px',
+      'height:26px',
+      'border-radius:50% 50% 50% 0',
+      'transform:rotate(-45deg)',
+      'border:3px solid #ffffff',
+      'background:#e11d48',
+      'box-shadow:0 2px 8px rgba(0,0,0,0.35)',
+      'cursor:pointer',
+    ].join(';');
+    el.addEventListener('click', (event) => {
+      event.stopPropagation();
+      setBottomCanvasData({ mode: 'landing-area', landingArea, selectedVessel });
+      setShowBottomCanvas(true);
+    });
+
+    landingMarkerRef.current = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+      .setLngLat([landingArea.lon, landingArea.lat])
+      .addTo(map);
+
+    return () => {
+      landingMarkerRef.current?.remove();
+      landingMarkerRef.current = null;
+    };
+  }, [landingArea, mapInstance, selectedVessel]);
 
   return (
-    <>
-      <ModernHeader />
+    <div style={widgetContainerStyle}>
+      <ModernHeader capTime={capTime} />
       <ForecastApp
-        WAVE_FORECAST_LAYERS={dynamicLayers}
-        ALL_LAYERS={ALL_LAYERS}
+        inundationThresholds={inundationThresholds}
+        WAVE_FORECAST_LAYERS={allLayers}
+        ALL_LAYERS={allLayers}
         selectedWaveForecast={selectedWaveForecast}
         setSelectedWaveForecast={setSelectedWaveForecast}
         opacity={wmsOpacity}
@@ -298,52 +523,109 @@ function Home({ widgetData, validCountries }) {
         totalSteps={totalSteps}
         isPlaying={isPlaying}
         setIsPlaying={setIsPlaying}
+        playSpeedMs={playSpeedMs}
+        setPlaySpeedMs={setPlaySpeedMs}
+        waveParticleMode={waveParticleMode}
+        setWaveParticleMode={setWaveParticleMode}
+        particleQuality={particleQuality}
+        setParticleQuality={setParticleQuality}
+        swellSourcesEnabled={swellSourcesEnabled}
+        setSwellSourcesEnabled={setSwellSourcesEnabled}
+        selectedVessel={selectedVessel}
+        setSelectedVessel={setSelectedVessel}
         currentSliderDate={currentSliderDate}
         capTime={capTime}
+        overlayStats={overlayStats}
         activeLayers={activeLayers}
         setActiveLayers={setActiveLayers}
         mapRef={mapRef}
         mapInstance={mapInstance}
+        setBasemap={setBasemap}
+        isUpdatingVisualization={loading}
+        minIndex={0}
+        isBuffering={false}
+        fitBounds={fitBounds}
+        enableLegacyMapInteraction={false}
         setBottomCanvasData={setBottomCanvasData}
         setShowBottomCanvas={setShowBottomCanvas}
-        isUpdatingVisualization={isUpdatingVisualization}
-        currentSliderDateStr={currentSliderDateStr}
-        minIndex={minIndex}
-
-        // Extras retained from earlier wiring (safe if unused)
-        BottomOffCanvas={BottomOffCanvas}
-        BottomBuoyOffCanvas={BottomBuoyOffCanvas}
-        getWorldClassLegendUrl={getWorldClassLegendUrl}
-        variableConfigMap={variableConfigMap}
-        wmsBaseUrl={NIUE_WMS_BASE}
-        widgetData={widgetData}
-        validCountries={validCountries}
+        landingArea={landingArea}
+        setLandingArea={setLandingArea}
+        landingAreaPickMode={landingAreaPickMode}
+        setLandingAreaPickMode={handleSetLandingAreaPickMode}
+        routePoints={routePoints}
+        routePickMode={routePickMode}
+        setRoutePickMode={handleSetRoutePickMode}
+        routeSpeedKt={routeSpeedKt}
+        setRouteSpeedKt={setRouteSpeedKt}
+        routeDepartureTime={routeDepartureTime}
+        setRouteDepartureTime={setRouteDepartureTime}
+        routeForecastResult={routeForecastResult}
+        routeForecastLoading={routeForecastLoading}
+        routeForecastError={routeForecastError}
+        onRunRouteForecast={handleRunRouteForecast}
+        onClearRoute={handleClearRoute}
+        onUndoRoutePoint={handleUndoRoutePoint}
+        onRouteImport={handleRouteImport}
+        scenarios={scenarios}
+        confirmedScenarioId={confirmedScenarioId}
+        runningScenarioIds={runningScenarioIds}
+        currentModelRunStart={capTime.modelRunStart}
+        onSaveCurrentAsScenario={handleSaveCurrentAsScenario}
+        onDuplicateScenario={handleDuplicateScenario}
+        onRemoveScenario={handleRemoveScenario}
+        onRunScenario={handleRunScenario}
+        onRunAllScenarios={handleRunAllScenarios}
       />
 
-      {/* Bottom Canvas for displaying forecast data on map clicks */}
+      {overlayError && (
+        <div style={{
+          position: 'fixed',
+          bottom: 80,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(220,53,69,0.92)',
+          color: '#fff',
+          padding: '8px 16px',
+          borderRadius: 8,
+          fontSize: 13,
+          zIndex: 10010,
+          maxWidth: 480,
+          textAlign: 'center',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+        }}>
+          Layer error: {overlayError}
+        </div>
+      )}
+
       <BottomOffCanvas
         show={showBottomCanvas}
-        onHide={() => {
-          setShowBottomCanvas(false);
-          // Remove any active markers when canvas is hidden
-          if (mapInstance?.current) {
-            mapInstance.current.eachLayer((layer) => {
-              if (layer.options && (layer.options.color === '#ff6b35' || layer.options.title === 'data-source-pin')) {
-                mapInstance.current.removeLayer(layer);
-              }
-            });
-          }
-        }}
+        onTimeSelect={handleTimeSelect}
+        onHide={handleHideBottomCanvas}
         data={bottomCanvasData}
+        currentSliderDate={currentSliderDate}
+        landingAreaTimeseries={landingAreaTimeseries}
+        seaLevelTimeseries={seaLevelTimeseries}
+        suitabilityApiBase={suitabilityApiBase}
+        currentTimeIndex={sliderIndex}
+        onRunRouteForecast={handleRunRouteForecast}
+        currentRouteInputs={{ routePoints, vessel: selectedVessel, speedKt: routeSpeedKt, departureTime: routeDepartureTime }}
+        currentModelRunStart={capTime.modelRunStart}
+        scenarioCount={scenarios.length}
+        onConfirmVesselSuggestion={handleConfirmVesselSuggestion}
+        departureSuggestionLoading={departureSuggestionLoading}
+        departureSuggestionProgress={departureSuggestionProgress}
+        departureSuggestionResult={departureSuggestionResult}
+        departureSuggestionError={departureSuggestionError}
+        onSuggestBetterDeparture={handleSuggestBetterDeparture}
+        onApplyDepartureSuggestion={handleApplyDepartureSuggestion}
+        onSaveDepartureSuggestionAsScenario={handleSaveDepartureSuggestionAsScenario}
       />
-
-      {/* Buoy Canvas for displaying buoy data when markers are clicked */}
       <BottomBuoyOffCanvas
         show={showBuoyCanvas}
         onHide={() => setShowBuoyCanvas(false)}
         buoyId={selectedBuoyId}
       />
-    </>
+    </div>
   );
 }
 

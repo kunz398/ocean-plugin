@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useWMSCapabilities } from './useWMSCapabilities';
 import { useTimeAnimation } from './useTimeAnimation';
 import { useUIState } from './useUIState';
@@ -6,7 +6,7 @@ import { useLayerManagement } from './useLayerManagement';
 import { useMapRendering } from './useMapRendering';
 import { useLegendManagement } from './useLegendManagement';
 import { isRasterSourceLayer } from '../config/layerConfig';
-import SfincsRasterService from '../services/SfincsRasterService';
+import { createInundationProvider } from '../services/inundationProviderFactory';
 
 /**
  * Main forecast hook that composes specialized hooks
@@ -35,6 +35,8 @@ export const useForecast = (config) => {
     selectedLayerConfig
   } = layerManagement;
 
+  const [rangeWindow, setRangeWindow] = useState({ mode: 'single' });
+
   useEffect(() => {
     const rasterLayers = allLayers.filter(isRasterSourceLayer);
 
@@ -43,13 +45,15 @@ export const useForecast = (config) => {
     }
 
     rasterLayers.forEach((layer) => {
-      const rasterService = new SfincsRasterService(layer.apiBase);
+      const provider = createInundationProvider(layer.apiBase);
+
+      if (!provider.capabilities.timestepRaster) return;
 
       Promise.all([
-        rasterService.loadMetadata(),
-        rasterService.loadTimesteps()
+        provider.loadMetadata(),
+        provider.loadTimesteps()
       ])
-        .then(([, timesteps]) => rasterService.warmupFrames({
+        .then(([, timesteps]) => provider.warmupFrames({
           startIndex: 0,
           count: 4,
           frameCount: timesteps.length,
@@ -73,7 +77,8 @@ export const useForecast = (config) => {
     selectedLayerConfig,
     inundationCategories,
     inundationMinDepth,
-    inundationResampleColors
+    inundationResampleColors,
+    rangeWindow
   );
   const {
     sliderIndex,
@@ -173,7 +178,11 @@ export const useForecast = (config) => {
     // Additional computed values
     currentSliderDateStr,
     selectedLayerConfig,
-    
+
+    // Inundation window (range-max mode)
+    rangeWindow,
+    setRangeWindow,
+
     // Spread additional control functions
     ...timeAnimation,
     ...uiState,

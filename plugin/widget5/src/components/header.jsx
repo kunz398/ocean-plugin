@@ -1,6 +1,5 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import ThemeToggle from './ThemeToggle';
 
 export default function Header() {
   return (
@@ -80,9 +79,6 @@ export default function Header() {
                 Link 3
               </Link>
             </li> */}
-            <li className="nav-item d-flex align-items-center ms-3">
-              <ThemeToggle />
-            </li>
           </ul>
         </div>
       </div>

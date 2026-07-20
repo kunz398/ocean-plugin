@@ -1,7 +1,9 @@
 import {
   RISK_DATA_CONFIG,
   getRiskDetailsUrl,
-  getRiskPointsUrl
+  getRiskPointsUrl,
+  getRiskThresholdsUrl,
+  getRiskThresholdUrl
 } from '../config/riskDataConfig';
 
 let riskPointsPromise = null;
@@ -156,6 +158,88 @@ export const fetchRiskPoints = async ({ zoom = 8, bbox = null } = {}) => {
     strategy: useRepresentatives ? 'representative' : 'detailed',
     points
   };
+};
+
+const RISK_THRESHOLD_STORAGE_PREFIX = 'risk-thresholds-';
+
+// Per-point Minor/Moderate threshold overrides, keyed by String(pointId) (JSON
+// object keys from the server are always strings). Populated by
+// ensureRiskThresholdOverridesLoaded() and kept in sync by saveRiskThresholdOverride().
+let riskThresholdOverridesCache = {};
+let riskThresholdOverridesPromise = null;
+
+const loadRiskThresholdOverridesFromServer = async () => {
+  const payload = await fetchRiskJson(getRiskThresholdsUrl());
+  const entries = payload && typeof payload === 'object' ? payload : {};
+  const next = {};
+  for (const [id, value] of Object.entries(entries)) {
+    const minor = coerceNumber(value?.minor, null);
+    const moderate = coerceNumber(value?.moderate, null);
+    if (minor != null && moderate != null) next[id] = { minor, moderate };
+  }
+  riskThresholdOverridesCache = next;
+  return next;
+};
+
+// Kicks off (once) the bulk fetch of server-saved threshold overrides. Call this
+// early (e.g. on map mount) and refresh markers when it resolves — getRiskThresholdOverride
+// stays synchronous throughout, reading whatever's in the cache at call time.
+export const ensureRiskThresholdOverridesLoaded = () => {
+  if (!riskThresholdOverridesPromise) {
+    riskThresholdOverridesPromise = loadRiskThresholdOverridesFromServer().catch((error) => {
+      console.error('Failed to load risk threshold overrides from server:', error);
+      riskThresholdOverridesPromise = null; // allow a retry on the next call
+      return riskThresholdOverridesCache;
+    });
+  }
+  return riskThresholdOverridesPromise;
+};
+
+// Server-saved override takes precedence (shared across users/devices); falls back
+// to this browser's localStorage draft when the server has nothing for this point
+// yet (e.g. offline, or the save endpoint failed and only the local copy landed).
+export const getRiskThresholdOverride = (pointId) => {
+  if (pointId == null) return null;
+  const fromServer = riskThresholdOverridesCache[String(pointId)];
+  if (fromServer) return fromServer;
+  try {
+    const saved = JSON.parse(localStorage.getItem(`${RISK_THRESHOLD_STORAGE_PREFIX}${pointId}`));
+    const minor = coerceNumber(saved?.minor, null);
+    const moderate = coerceNumber(saved?.moderate, null);
+    if (minor != null && moderate != null) return { minor, moderate };
+  } catch {
+    // corrupted entry — ignore, fall back to server-computed riskLevel
+  }
+  return null;
+};
+
+// Persists a point's Minor/Moderate thresholds to zarr-api. Throws on failure —
+// callers should keep their existing localStorage write as an offline fallback.
+export const saveRiskThresholdOverride = async (pointId, minor, moderate) => {
+  const response = await fetch(getRiskThresholdUrl(pointId), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ minor, moderate })
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to save risk thresholds: ${response.status} ${response.statusText}`);
+  }
+  riskThresholdOverridesCache = {
+    ...riskThresholdOverridesCache,
+    [String(pointId)]: { minor, moderate }
+  };
+};
+
+export const getEffectiveRiskLevel = (point) => {
+  const fallback = coerceNumber(point?.riskLevel, 0);
+  const override = getRiskThresholdOverride(point?.id);
+  const maxTWL = coerceNumber(point?.maxTWL, null);
+  if (!override || maxTWL == null || override.minor >= override.moderate) {
+    return fallback;
+  }
+  if (maxTWL >= override.moderate) return 2;
+  if (maxTWL >= override.minor) return 1;
+  return 0;
 };
 
 export const fetchRiskDetails = async (pointId) => {

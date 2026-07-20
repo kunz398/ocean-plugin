@@ -1,0 +1,104 @@
+/* Landing Assessment panel — always sits on the offcanvas's dark-navy
+   background (see LandingAreaDetailsPanel.jsx header comment), so these
+   colors are fixed rather than isDarkMode-conditional. */
+
+.landing-panel__header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 1rem;
+}
+
+.landing-panel__warning {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.65rem 0.85rem;
+  border-radius: 8px;
+  line-height: 1.55;
+  border-left: 4px solid rgba(245, 158, 11, 0.85);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.landing-panel__warning--info {
+  border-left-color: rgba(56, 189, 248, 0.85);
+  background: rgba(56, 189, 248, 0.08);
+}
+
+.landing-panel__stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.65rem;
+}
+
+.landing-panel__stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  cursor: default;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.3s ease,
+              background 0.3s ease,
+              border-color 0.3s ease;
+}
+
+.landing-panel__stat-card:hover {
+  transform: translateY(-4px);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.04));
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.25);
+}
+
+.landing-panel__stat-card:active {
+  transform: translateY(-1px) scale(0.985);
+  filter: brightness(0.9);
+  transition: transform 0.05s ease-in;
+}
+
+.landing-panel__stat-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.66rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(203, 213, 225, 0.65);
+}
+
+.landing-panel__stat-value {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.landing-panel__stat-value--empty {
+  opacity: 0.4;
+}
+
+.landing-panel__chart-frame {
+  border-radius: 14px;
+  padding: 1rem 1rem 0.6rem;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: default;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.3s ease,
+              background 0.3s ease,
+              border-color 0.3s ease;
+}
+
+.landing-panel__chart-frame:hover {
+  transform: translateY(-4px);
+  background: rgba(30, 41, 59, 0.7);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.25);
+}
+
+.landing-panel__chart-frame:active {
+  transform: translateY(-1px) scale(0.995);
+  filter: brightness(0.9);
+  transition: transform 0.05s ease-in;
+}

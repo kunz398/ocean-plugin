@@ -1,0 +1,416 @@
+.risk-details-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  height: 100%;
+  min-height: 0;
+  animation: riskPanelEnter 220ms ease-out;
+}
+
+.risk-details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.risk-details-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.risk-details-title h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.risk-details-subtitle {
+  margin: 0;
+  font-size: 0.84rem;
+  opacity: 0.8;
+}
+
+.risk-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  transition: background-color 220ms ease, transform 180ms ease, box-shadow 220ms ease;
+}
+
+.risk-summary-compact {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) repeat(2, minmax(120px, 0.8fr));
+  gap: 0.5rem;
+}
+
+.risk-summary-primary,
+.risk-summary-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(248, 250, 252, 0.72);
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease, background-color 220ms ease, color 220ms ease;
+  animation: metricCardEnter 260ms ease-out both;
+}
+
+.risk-summary-primary {
+  animation-delay: 40ms;
+}
+
+.risk-summary-metric:nth-child(2) {
+  animation-delay: 80ms;
+}
+
+.risk-summary-metric:nth-child(3) {
+  animation-delay: 120ms;
+}
+
+.risk-summary-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+}
+
+.risk-summary-label {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.72;
+}
+
+.risk-summary-primary strong,
+.risk-summary-metric strong {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.risk-threshold-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: inherit;
+  font-weight: 700;
+}
+
+.risk-threshold-input {
+  width: 5.6rem;
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #0f172a;
+  font-size: 0.95rem;
+  font-weight: 700;
+  padding: 0.28rem 0.4rem;
+}
+
+.risk-threshold-input:focus {
+  border-color: rgba(96, 165, 250, 0.82);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18);
+  outline: none;
+}
+
+.risk-threshold-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 1.75rem;
+  margin-top: -0.25rem;
+}
+
+.risk-threshold-warning {
+  color: #fbbf24;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.risk-threshold-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+}
+
+.risk-threshold-reset {
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.08);
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.32rem 0.55rem;
+}
+
+.risk-threshold-reset:hover {
+  border-color: rgba(96, 165, 250, 0.55);
+  background: rgba(96, 165, 250, 0.14);
+}
+
+.risk-threshold-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  border-radius: 6px;
+  background: #3b82f6;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.32rem 0.6rem;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.risk-threshold-save:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.risk-threshold-save:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.risk-threshold-save--flash {
+  background: #16a34a;
+}
+
+.risk-threshold-save--flash:hover {
+  background: #16a34a;
+}
+
+.risk-summary-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.82rem;
+  opacity: 0.78;
+  transition: color 220ms ease;
+}
+
+.risk-chart-card {
+  flex: 1 1 auto;
+  min-height: 220px;
+  padding: 0.6rem;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(248, 250, 252, 0.78);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  animation: chartCardEnter 280ms ease-out;
+  transition: background-color 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+
+.risk-chart-shell {
+  position: relative;
+  flex: 1;
+  height: auto;
+  min-height: 220px;
+}
+
+.risk-loading,
+.risk-error,
+.risk-chart-empty {
+  padding: 1rem;
+  border-radius: 12px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.risk-loading {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.risk-error {
+  background: rgba(239, 68, 68, 0.12);
+  color: #b91c1c;
+}
+
+.risk-panel-dark .risk-summary-primary,
+.risk-panel-dark .risk-summary-metric,
+.risk-panel-dark .risk-chart-card {
+  background: rgba(30, 41, 59, 0.72);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+.risk-panel-dark .risk-threshold-input {
+  background: rgba(15, 23, 42, 0.58);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #f8fafc;
+}
+
+.risk-panel-dark .risk-threshold-reset {
+  background: rgba(15, 23, 42, 0.36);
+}
+
+.risk-panel-dark .risk-threshold-save {
+  background: #3b82f6;
+}
+
+.risk-panel-dark .risk-threshold-save:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.risk-panel-dark .risk-threshold-save--flash {
+  background: #16a34a;
+}
+
+.risk-panel-dark .risk-summary-card:hover {
+  box-shadow: 0 10px 24px rgba(2, 6, 23, 0.24);
+}
+
+.risk-panel-dark .risk-error {
+  background: rgba(127, 29, 29, 0.32);
+  color: #fecaca;
+}
+
+.risk-changed {
+  animation: riskBadgePulse 320ms ease-out;
+}
+
+.risk-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(148, 163, 184, 0.18);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.risk-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.35),
+    transparent
+  );
+  animation: riskShimmer 1.2s infinite;
+}
+
+.risk-skeleton-block {
+  min-height: 64px;
+}
+
+.risk-skeleton-chart {
+  min-height: 220px;
+}
+
+@keyframes riskPanelEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes metricCardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes chartCardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes riskBadgePulse {
+  0% {
+    transform: scale(0.96);
+    box-shadow: 0 0 0 0 rgba(15, 23, 42, 0.08);
+  }
+  50% {
+    transform: scale(1.06);
+    box-shadow: 0 0 0 8px rgba(15, 23, 42, 0.04);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(15, 23, 42, 0);
+  }
+}
+
+@keyframes riskShimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .risk-details-panel,
+  .risk-summary-primary,
+  .risk-summary-metric,
+  .risk-chart-card,
+  .risk-changed,
+  .risk-skeleton::after {
+    animation: none !important;
+  }
+
+  .risk-status-badge,
+  .risk-summary-primary,
+  .risk-summary-metric,
+  .risk-chart-card,
+  .risk-summary-meta {
+    transition: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .risk-details-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .risk-details-title h3 {
+    font-size: 1rem;
+  }
+
+  .risk-details-subtitle {
+    font-size: 0.82rem;
+  }
+
+  .risk-status-badge {
+    align-self: flex-start;
+  }
+
+  .risk-summary-compact {
+    grid-template-columns: 1fr;
+  }
+
+  .risk-chart-card {
+    min-height: 240px;
+  }
+
+  .risk-chart-shell {
+    min-height: 240px;
+  }
+}

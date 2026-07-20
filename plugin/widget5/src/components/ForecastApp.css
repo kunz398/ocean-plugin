@@ -41,15 +41,11 @@
 }
 
 .map-section {
-  background: rgba(255, 255, 255, 0.1);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
+  background: #0a1628;
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   overflow: hidden;
   position: relative;
-  /* Own stacking context — legend/controls use z-index relative to this, not the page */
-  isolation: isolate;
 }
 
 /* ==============================================
@@ -67,9 +63,9 @@
 
 .marine-legend {
   position: absolute;
-  bottom: 20px;
+  bottom: 152px;   /* clear the ForecastTimeline overlay (~120px tall + 16px gap + 16px margin) */
   right: 20px;
-  z-index: 1010; /* Higher z-index to ensure it's above Leaflet controls */
+  z-index: 999;
   pointer-events: auto; /* Enable clicks on legend */
   
   /* Professional marine styling */
@@ -86,11 +82,12 @@
   
   /* Stable reference material - no animations */
   transition: none;
-  min-width: 55px;
-  max-width: 90px;
-  
+  box-sizing: border-box;
+  min-width: 172px;
+  max-width: min(210px, calc(100vw - 32px));
+
   /* Ensure legend is always visible and proportional */
-  max-height: 80vh; /* Never exceed 80% of viewport height */
+  max-height: 80vh;
 }
 
 /* Map section container query support */
@@ -131,21 +128,101 @@
 }
 
 .marine-legend-title {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--legend-accent);
-  text-align: center;
+  text-align: left;
   margin-bottom: 8px;
   letter-spacing: 0.3px;
   text-transform: uppercase;
   border-bottom: 1px solid rgba(0, 188, 212, 0.3);
   padding-bottom: 4px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+
+/* ⓘ info button inline with legend title */
+.marine-legend-info {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  color: rgba(0, 212, 255, 0.7);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: default;
+  flex-shrink: 0;
+}
+
+.marine-legend-info__tooltip {
+  display: none;
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 210px;
+  background: rgba(0, 15, 35, 0.96);
+  border: 1px solid rgba(0, 212, 255, 0.22);
+  border-radius: 7px;
+  color: #c0d8f0;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.45;
+  padding: 8px 10px;
+  white-space: normal;
+  text-transform: none;
+  letter-spacing: 0;
+  z-index: 2000;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+
+.marine-legend-info:hover .marine-legend-info__tooltip,
+.marine-legend-info:focus .marine-legend-info__tooltip {
+  display: block;
+}
+
+.marine-legend-toggle {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 8px;
+  font-size: 9px;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1px solid var(--legend-text, #555);
+  background: transparent;
+  color: var(--legend-text, #555);
+  cursor: pointer;
+  opacity: 0.55;
+  letter-spacing: 0.02em;
+  transition: opacity 0.15s, background 0.15s;
+}
+.marine-legend-toggle:hover {
+  opacity: 0.85;
+}
+.marine-legend-toggle--active {
+  background: var(--accent-cyan, #0ea5c8);
+  border-color: var(--accent-cyan, #0ea5c8);
+  color: #fff;
+  opacity: 0.9;
 }
 
 .marine-legend-content {
   display: flex;
   align-items: stretch;
-  gap: 6px;
+  gap: 8px;
 }
 
 /* Wrapper so hairline markers can be overlaid on the gradient bar */
@@ -155,7 +232,7 @@
 }
 
 .marine-legend-gradient {
-  width: 20px;
+  width: 32px;
   height: min(25vh, 200px); /* Responsive: 25% of viewport height, max 200px */
   border-radius: 3px;
   border: 1px solid var(--legend-border);
@@ -177,7 +254,8 @@
 .marine-legend-scale {
   position: relative;
   height: min(25vh, 200px); /* Match gradient height */
-  min-width: 25px;
+  flex: 1 1 auto;
+  min-width: 92px;
   align-items: flex-start;
   overflow: visible; /* Allow severity tooltips to float left of the scale */
 }
@@ -190,43 +268,46 @@
 }
 
 .marine-legend-value {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--legend-text);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
   background: rgba(0, 0, 0, 0.3);
-  padding: 1px 2px;
+  padding: 1px 3px;
   border-radius: 2px;
   white-space: nowrap;
 }
 
 .marine-legend-tick {
   position: absolute;
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--legend-text);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
   background: rgba(0, 0, 0, 0.2);
-  padding: 1px 2px;
+  padding: 1px 3px;
   border-radius: 1px;
   white-space: nowrap;
   text-align: right;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .marine-legend-tick__value {
   display: inline;
 }
 
-/* Colored swatch square — always visible beside depth value for threshold ticks */
+/* Inline color tick: anchors the label to the gradient scale without a second swatch legend. */
 .marine-legend-tick__swatch {
   display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 1px;
-  margin-right: 3px;
+  width: 12px;
+  height: 2px;
+  border-radius: 999px;
   vertical-align: middle;
   flex-shrink: 0;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 0;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
 /* Labeled ticks get a slightly larger hit area for easier hover */
@@ -254,7 +335,7 @@
 
 .marine-legend-tick__severity strong {
   display: block;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   color: #e8f4ff;
   margin-bottom: 2px;
@@ -263,7 +344,7 @@
 
 .marine-legend-tick__severity em {
   display: block;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 400;
   font-style: normal;
   color: rgba(180, 210, 255, 0.75);
@@ -281,7 +362,7 @@
 }
 
 .marine-legend-units {
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 500;
   color: rgba(255, 255, 255, 0.95);  /* Improved from 0.7 for better contrast */
   text-align: center;
@@ -294,37 +375,37 @@
     bottom: 15px;
     right: 15px;
     padding: 8px;
-    min-width: 55px;
-    max-width: 70px;
+    min-width: 150px;
+    max-width: calc(100vw - 30px);
   }
-  
+
   .marine-legend-title {
-    font-size: 8px;
+    font-size: 10px;
     margin-bottom: 4px;
   }
-  
+
   .marine-legend-gradient {
-    width: 16px;
+    width: 26px;
     height: min(20vh, 150px); /* Tablet: 20% viewport height, max 150px */
   }
-  
+
   .marine-legend-scale {
     position: relative;
     height: min(20vh, 150px);
-    min-width: 20px;
+    min-width: 82px;
   }
-  
+
   .marine-legend-value {
-    font-size: 8px;
+    font-size: 10px;
     padding: 1px 2px;
   }
-  
+
   .marine-legend-tick {
-    font-size: 7px;
+    font-size: 10px;
   }
-  
+
   .marine-legend-units {
-    font-size: 7px;
+    font-size: 10px;
   }
 }
 
@@ -333,31 +414,31 @@
     bottom: 10px;
     right: 10px;
     padding: 6px;
-    min-width: 45px;
-    max-width: 55px;
+    min-width: 138px;
+    max-width: calc(100vw - 20px);
   }
   
   .marine-legend-gradient {
-    width: 14px;
+    width: 22px;
     height: min(18vh, 120px); /* Mobile: 18% viewport height, max 120px */
   }
-  
+
   .marine-legend-scale {
     position: relative;
     height: min(18vh, 120px);
-    min-width: 18px;
+    min-width: 78px;
   }
-  
+
   .marine-legend-value {
-    font-size: 7px;
+    font-size: 10px;
   }
-  
+
   .marine-legend-tick {
-    font-size: 6px;
+    font-size: 10px;
   }
-  
+
   .marine-legend-units {
-    font-size: 6px;
+    font-size: 10px;
   }
 }
 
@@ -1048,12 +1129,15 @@
 .controls-panel {
   background: rgba(0, 0, 0, 0.7);
   border-radius: 12px;
-  padding: 0.35rem;
+  padding: 0.75rem;
   overflow-y: auto;
   overflow-x: hidden;
   backdrop-filter: blur(10px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   max-width: 100%;
+  /* Subtle fade at bottom hints that content continues below the fold */
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent 100%);
+  mask-image: linear-gradient(to bottom, black calc(100% - 28px), transparent 100%);
 }
 
 #forecast-map-placeholder {
@@ -1108,25 +1192,36 @@
 .var-btn {
   padding: 0.4rem;
   background: linear-gradient(135deg, #2a5298 0%, #1e3c72 100%);
-  border: 2px solid #00d4ff;
+  border: 2px solid var(--var-color, #00d4ff);
   color: white;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
   font-weight: bold;
   text-align: center;
   backdrop-filter: blur(5px);
 }
 
 .var-btn:hover {
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 15px rgba(0, 212, 255, 0.3);
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 80, 120, 0.25) 100%);
+  border-color: var(--var-color, rgba(0, 212, 255, 0.8));
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25);
 }
 
+/* Active: filled with the variable's own colour — each dataset has a unique identity */
 .var-btn.active {
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+  background: var(--var-color, #00d4ff);
+  color: #001428;
+  border-color: var(--var-color, #00d4ff);
+  font-weight: 700;
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transform: none;
+}
+
+.var-btn.active:hover {
+  filter: brightness(0.92);
+  transform: none;
 }
 
 .time-control {
@@ -1297,43 +1392,22 @@
   margin-bottom: 0.45rem;
 }
 
-.island-zoom-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.45rem;
-  align-items: center;
-}
-
-.island-zoom-select,
-.island-zoom-btn {
+.island-zoom-select {
   min-height: 38px;
   border-radius: 8px;
   border: 1px solid rgba(0, 212, 255, 0.65);
   color: #f1f5f9;
   font-weight: 700;
-}
-
-.island-zoom-select {
-  width: 100%;
-  min-width: 0;
   background: rgba(15, 23, 42, 0.92);
   padding: 0 0.6rem;
 }
 
-.island-zoom-btn {
-  background: linear-gradient(135deg, #00bcd4 0%, #00897b 100%);
-  padding: 0 0.85rem;
-  cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+.island-zoom-select--full {
+  width: 100%;
+  display: block;
 }
 
-.island-zoom-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(0, 188, 212, 0.28);
-}
-
-.island-zoom-select:disabled,
-.island-zoom-btn:disabled {
+.island-zoom-select:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -1623,6 +1697,64 @@
   justify-content: space-between;
   align-items: center;
   font-weight: 500;
+}
+
+.map-display-option {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+
+.map-display-option__label {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: rgba(224, 247, 255, 0.9);
+}
+
+.map-display-option__segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  padding: 0.22rem;
+  background: rgba(6, 18, 32, 0.58);
+  border: 1px solid rgba(100, 180, 220, 0.2);
+  border-radius: 7px;
+}
+
+.map-display-option__btn {
+  min-height: 32px;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: rgba(210, 228, 255, 0.72);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.map-display-option__btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8f4ff;
+}
+
+.map-display-option__btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.map-display-option__btn--active {
+  background: rgba(33, 150, 243, 0.25);
+  border-color: rgba(80, 190, 255, 0.58);
+  color: #dff6ff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.map-display-option__hint {
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: rgba(180, 200, 230, 0.58);
 }
 
 .data-info {
@@ -2140,11 +2272,13 @@
 /* Small phones */
 @media (max-width: 480px) {
   .main-container {
+    /* Single column stacked layout — the missing rule that caused map to collapse to 0px */
+    grid-template-columns: 1fr;
     grid-template-rows: 1fr 280px;
     gap: 0.25rem;
     padding: 0.25rem;
   }
-  
+
   .controls-panel {
     height: 260px;
     padding: 0.5rem;
@@ -2263,8 +2397,8 @@
   }
   
   .marine-legend {
-    min-width: 65px;
-    max-width: 85px;
+    min-width: 90px;
+    max-width: 130px;
   }
 }
 
@@ -2287,10 +2421,10 @@
 
 /* Professional legend positioning */
 .marine-legend {
-  user-select: none;
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
+  user-select: none;
 }
 
 /* Coordinate with scale bar positioning */
@@ -2483,7 +2617,7 @@
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
-  z-index: 1000;
+  z-index: 20000;
   animation: ite-fade-in 0.15s ease;
 }
 
@@ -2498,7 +2632,7 @@
   border-left: 1px solid rgba(100, 160, 220, 0.2);
   display: flex;
   flex-direction: column;
-  z-index: 1001;
+  z-index: 20001;
   animation: ite-slide-in 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   color: #e0e6f0;
@@ -2770,7 +2904,7 @@
 
 .ite-table-header {
   display: grid;
-  grid-template-columns: 26px 46px 82px minmax(150px, 1.1fr) minmax(260px, 2.2fr) 56px;
+  grid-template-columns: 26px 40px auto minmax(0, 1.1fr) minmax(0, 2.2fr) 40px;
   align-items: center;
   gap: 0.5rem;
   padding: 0 0.4rem 0.4rem;
@@ -2785,7 +2919,7 @@
 
 .ite-row {
   display: grid;
-  grid-template-columns: 26px 46px 82px minmax(150px, 1.1fr) minmax(260px, 2.2fr) 56px;
+  grid-template-columns: 26px 40px auto minmax(0, 1.1fr) minmax(0, 2.2fr) 40px;
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 0.4rem;
@@ -2858,7 +2992,8 @@
 }
 
 .ite-number-input {
-  flex: 0 0 82px;
+  flex: 0 0 auto;
+  width: 58px;
   padding: 0.3rem 0.4rem;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(100, 160, 220, 0.2);
@@ -2879,7 +3014,7 @@
 }
 
 .ite-number-input--compact {
-  flex: 0 0 78px;
+  width: 58px;
 }
 
 .ite-text-input {
@@ -2962,7 +3097,7 @@
   }
 
   .ite-row {
-    grid-template-columns: 26px 46px 82px 56px;
+    grid-template-columns: 26px 40px auto 40px;
     align-items: start;
   }
 
@@ -2983,4 +3118,315 @@
   .ite-row__actions {
     justify-self: end;
   }
+}
+
+/* ── Modern Header ───────────────────────────────────────────────────────── */
+.modern-header {
+  background: linear-gradient(135deg, #0a2463 0%, #1e3a5f 40%, #2e5266 70%, #3e7b69 100%);
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+body:not(.dark-mode) .modern-header {
+  background: linear-gradient(135deg, #023e8a 0%, #0353a4 35%, #0369a1 65%, #045f93 100%);
+  box-shadow: 0 2px 16px rgba(0, 40, 100, 0.28);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LIGHT MODE — Ocean Daylight palette
+   Activated when body does NOT have the .dark-mode class.
+   Text: deep ocean navy  ·  Panels: white  ·  Accent: ocean blue #0077b6
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Shared tokens — written as a helper comment; values used inline below.
+   --lm-bg-app:     #f0f8ff → #e0f0ff   (sky gradient)
+   --lm-panel:      #ffffff              (white card)
+   --lm-border:     rgba(0,119,182,.18)  (ocean blue tint)
+   --lm-text:       #0c2340             (deep navy)
+   --lm-text-2:     #3a5a7a             (mid-blue grey)
+   --lm-text-3:     #6b8caa             (muted)
+   --lm-accent:     #0077b6             (ocean blue)
+   --lm-accent-2:   #00b4d8             (bright teal)
+*/
+
+/* ── App shell ─────────────────────────────────────────────────────────── */
+body:not(.dark-mode) .forecast-app {
+  background: linear-gradient(160deg, #e8f4fd 0%, #ddeeff 55%, #cce8f8 100%);
+  color: #0c2340;
+}
+
+body:not(.dark-mode) .map-section {
+  background: #c8dff0;
+  box-shadow: 0 8px 32px rgba(0, 60, 120, 0.12);
+}
+
+/* ── Controls panel ────────────────────────────────────────────────────── */
+body:not(.dark-mode) .controls-panel {
+  background: #ffffff;
+  box-shadow: 0 4px 24px rgba(0, 60, 120, 0.10), 0 1px 4px rgba(0,0,0,0.06);
+  border: 1px solid rgba(0, 119, 182, 0.12);
+}
+
+body:not(.dark-mode) .control-group h3 {
+  color: #0077b6;
+  border-color: #0077b6;
+}
+
+body:not(.dark-mode) .control-group-header,
+body:not(.dark-mode) .control-group-icon {
+  color: #0077b6;
+}
+
+body:not(.dark-mode) .control-group-content {
+  color: #0c2340;
+}
+
+/* ── Variable buttons ──────────────────────────────────────────────────── */
+body:not(.dark-mode) .var-btn {
+  background: linear-gradient(135deg, #0077b6 0%, #023e8a 100%);
+  border: 2px solid var(--var-color, #0096c7);
+  color: #ffffff;
+}
+
+body:not(.dark-mode) .var-btn:hover {
+  background: linear-gradient(135deg, #0096c7 0%, #0077b6 100%);
+  box-shadow: 0 4px 14px rgba(0, 119, 182, 0.35);
+}
+
+body:not(.dark-mode) .var-btn.active {
+  background: var(--var-color, #00b4d8);
+  border-color: var(--var-color, #00b4d8);
+  color: #001428;
+  box-shadow: 0 0 18px rgba(0, 0, 0, 0.15);
+}
+
+/* ── Time control card ─────────────────────────────────────────────────── */
+body:not(.dark-mode) .time-control {
+  background: #ffffff;
+  border: 1px solid rgba(0, 119, 182, 0.2);
+  box-shadow: 0 3px 12px rgba(0, 60, 120, 0.08);
+}
+
+body:not(.dark-mode) .forecast-info {
+  background: rgba(224, 242, 254, 0.55);
+  border: 1px solid rgba(0, 119, 182, 0.15);
+  border-radius: 8px;
+}
+
+body:not(.dark-mode) .forecast-info span,
+body:not(.dark-mode) .forecast-info label,
+body:not(.dark-mode) .time-display {
+  color: #0c2340;
+}
+
+body:not(.dark-mode) .time-zone-row label {
+  color: #3a5a7a;
+}
+
+body:not(.dark-mode) .time-zone-select {
+  background: #f0f8ff;
+  border: 1px solid rgba(0, 119, 182, 0.3);
+  color: #0077b6;
+}
+
+/* ── Time slider container ─────────────────────────────────────────────── */
+body:not(.dark-mode) .time-slider-container {
+  background: rgba(224, 242, 254, 0.45);
+  border: 1px solid rgba(0, 119, 182, 0.14);
+}
+
+/* Time slider — high-contrast track + thumb for light mode */
+body:not(.dark-mode) .time-slider {
+  background: linear-gradient(90deg, #0077b6 0%, #00b4d8 100%);
+  height: 6px;
+}
+
+body:not(.dark-mode) .time-slider::-webkit-slider-thumb {
+  background: #023e8a;
+  border: 3px solid #ffffff;
+  box-shadow: 0 0 0 3px rgba(0, 119, 182, 0.35), 0 2px 8px rgba(0, 40, 100, 0.4);
+  width: 20px;
+  height: 20px;
+}
+
+body:not(.dark-mode) .time-slider::-moz-range-thumb {
+  background: #023e8a;
+  border: 3px solid #ffffff;
+  box-shadow: 0 0 0 3px rgba(0, 119, 182, 0.35), 0 2px 8px rgba(0, 40, 100, 0.4);
+  width: 20px;
+  height: 20px;
+}
+
+body:not(.dark-mode) .time-slider::-moz-range-track {
+  background: linear-gradient(90deg, #0077b6 0%, #00b4d8 100%);
+  height: 6px;
+}
+
+body:not(.dark-mode) .time-slider::-webkit-slider-thumb:hover {
+  background: #0077b6;
+  box-shadow: 0 0 0 5px rgba(0, 119, 182, 0.25), 0 3px 12px rgba(0, 40, 100, 0.5);
+}
+
+/* ── Playback buttons ──────────────────────────────────────────────────── */
+body:not(.dark-mode) .playback-controls {
+  background: rgba(224, 242, 254, 0.5);
+  border: 1px solid rgba(0, 119, 182, 0.15);
+}
+
+body:not(.dark-mode) .play-btn {
+  background: linear-gradient(135deg, #0077b6 0%, #00b4d8 100%);
+  border-color: rgba(0, 180, 216, 0.6);
+  box-shadow: 0 6px 16px rgba(0, 119, 182, 0.3), 0 2px 6px rgba(0,0,0,0.1);
+}
+
+body:not(.dark-mode) .play-btn:hover {
+  background: linear-gradient(135deg, #0096c7 0%, #00cae0 100%);
+  box-shadow: 0 8px 20px rgba(0, 119, 182, 0.4);
+}
+
+body:not(.dark-mode) .prev-btn,
+body:not(.dark-mode) .next-btn {
+  background: rgba(224, 242, 254, 0.8);
+  border: 1px solid rgba(0, 119, 182, 0.3);
+  color: #0077b6;
+  box-shadow: 0 2px 6px rgba(0, 60, 120, 0.1);
+}
+
+body:not(.dark-mode) .prev-btn:hover:not(:disabled),
+body:not(.dark-mode) .next-btn:hover:not(:disabled) {
+  background: rgba(0, 119, 182, 0.12);
+  border-color: rgba(0, 119, 182, 0.5);
+  box-shadow: 0 4px 12px rgba(0, 119, 182, 0.2);
+}
+
+/* ── Opacity slider ────────────────────────────────────────────────────── */
+body:not(.dark-mode) .opacity-control label,
+body:not(.dark-mode) .opacity-label {
+  color: #3a5a7a;
+}
+
+body:not(.dark-mode) .opacity-slider {
+  background: rgba(0, 119, 182, 0.2);
+}
+
+body:not(.dark-mode) .opacity-slider::-webkit-slider-thumb {
+  background: #0077b6;
+}
+
+/* ── Island zoom control ───────────────────────────────────────────────── */
+body:not(.dark-mode) .island-zoom-control {
+  background: rgba(224, 242, 254, 0.5);
+  border: 1px solid rgba(0, 119, 182, 0.12);
+}
+
+body:not(.dark-mode) .island-zoom-control label {
+  color: #0077b6;
+}
+
+body:not(.dark-mode) .island-zoom-select {
+  background: #f0f8ff;
+  border-color: rgba(0, 119, 182, 0.4);
+  color: #0c2340;
+}
+
+
+/* ── Inundation threshold trigger ──────────────────────────────────────── */
+body:not(.dark-mode) .inundation-threshold-trigger__btn {
+  background: #f0f8ff;
+  border: 1px solid rgba(0, 119, 182, 0.3);
+  color: #0077b6;
+}
+
+body:not(.dark-mode) .inundation-threshold-trigger__btn:hover {
+  background: rgba(0, 119, 182, 0.08);
+  border-color: rgba(0, 119, 182, 0.5);
+}
+
+body:not(.dark-mode) .inundation-threshold-trigger__hint {
+  color: #3a5a7a;
+}
+
+body:not(.dark-mode) .inundation-threshold-trigger__count {
+  color: #0077b6;
+  font-weight: 600;
+}
+
+/* ── Marine legend ─────────────────────────────────────────────────────── */
+body:not(.dark-mode) .marine-legend {
+  --legend-bg: rgba(255, 255, 255, 0.97);
+  --legend-border: rgba(0, 119, 182, 0.25);
+  --legend-text: #0c2340;
+  --legend-shadow: 0 4px 20px rgba(0, 60, 120, 0.14);
+  box-shadow: 0 4px 20px rgba(0, 60, 120, 0.14);
+}
+
+body:not(.dark-mode) .marine-legend-title {
+  color: #0077b6;
+  border-bottom-color: rgba(0, 119, 182, 0.2);
+}
+
+body:not(.dark-mode) .marine-legend-tick__value {
+  color: #0c2340;
+}
+
+body:not(.dark-mode) .marine-legend-units {
+  color: #3a5a7a;
+}
+
+/* ── Header title: crisp white (cyan fails WCAG AA on mid-blue) ────────── */
+body:not(.dark-mode) .modern-header__title {
+  background: none !important;
+  -webkit-background-clip: unset !important;
+  background-clip: unset !important;
+  -webkit-text-fill-color: #ffffff !important;
+  color: #ffffff !important;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45) !important;
+  font-weight: 800 !important;
+}
+
+/* ── Inactive var-btn: ghost style so active colour truly pops ─────────── */
+body:not(.dark-mode) .var-btn {
+  background: #ffffff;
+  border: 2px solid var(--var-color, #0077b6);
+  color: #023e8a;
+  box-shadow: none;
+}
+
+body:not(.dark-mode) .var-btn:hover {
+  background: #e0f2fe;
+  border-color: var(--var-color, #0096c7);
+  color: #0077b6;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+body:not(.dark-mode) .var-btn.active {
+  background: var(--var-color, #00b4d8);
+  border-color: var(--var-color, #00b4d8);
+  color: #001428;
+  box-shadow: 0 0 16px rgba(0, 0, 0, 0.12);
+}
+
+/* ── Prev / Next buttons: dark navy text for WCAG AA on light bg ───────── */
+body:not(.dark-mode) .prev-btn,
+body:not(.dark-mode) .next-btn {
+  background: #ffffff;
+  border: 1.5px solid rgba(0, 119, 182, 0.4);
+  color: #023e8a;
+  box-shadow: 0 2px 6px rgba(0, 60, 120, 0.08);
+}
+
+body:not(.dark-mode) .prev-btn:hover:not(:disabled),
+body:not(.dark-mode) .next-btn:hover:not(:disabled) {
+  background: #e0f2fe;
+  border-color: #0077b6;
+  color: #023e8a;
+  box-shadow: 0 4px 12px rgba(0, 119, 182, 0.18);
+}
+
+body:not(.dark-mode) .prev-btn:disabled,
+body:not(.dark-mode) .next-btn:disabled {
+  background: #f8fafc;
+  border-color: rgba(0, 119, 182, 0.2);
+  color: #94a3b8;
 }

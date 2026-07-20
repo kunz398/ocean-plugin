@@ -25,10 +25,55 @@
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
     <title>Cook Islands Ocean Dashboard</title>
+
+    <!-- Preconnect to external data sources so first tile/zarr fetch has no DNS penalty -->
+    <link rel="preconnect" href="https://s3.ap-southeast-2.wasabisys.com" crossorigin />
+    <link rel="preconnect" href="https://ocean-zarr.spc.int" crossorigin />
+    <link rel="preconnect" href="https://a.basemaps.cartocdn.com" crossorigin />
+
+    <style>
+      /* Inline loading splash — renders from HTML before any JS downloads */
+      body { margin: 0; background: #0c1523; }
+      #root-splash {
+        position: fixed; inset: 0;
+        background: #0c1523;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        gap: 1.25rem;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: rgba(255,255,255,0.82);
+        transition: opacity 0.25s ease;
+      }
+      #root-splash h1 {
+        font-size: 1.15rem; font-weight: 600;
+        letter-spacing: 0.05em; margin: 0;
+      }
+      #root-splash p {
+        font-size: 0.8rem; color: rgba(255,255,255,0.35);
+        margin: -0.75rem 0 0; letter-spacing: 0.03em;
+      }
+      @keyframes _sp { to { transform: rotate(360deg); } }
+      #root-splash-ring {
+        width: 46px; height: 46px;
+        border: 3px solid rgba(14,165,233,0.12);
+        border-top-color: #0ea5e9;
+        border-radius: 50%;
+        animation: _sp 0.85s linear infinite;
+      }
+    </style>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Visible immediately from HTML; React replaces this on first render -->
+      <div id="root-splash">
+        <div id="root-splash-ring"></div>
+        <div>
+          <h1>Cook Islands Ocean Dashboard</h1>
+          <p>Loading forecast…</p>
+        </div>
+      </div>
+    </div>
     <!--
       This HTML file is a template.
       If you open it directly in the browser, you will see an empty page.

@@ -41,28 +41,16 @@ function extractCoverageTimeseries(json, variable) {
     !json.ranges[variable].values
   )
     return null;
-  const times = json.domain.axes.t.values;
-  const values = json.ranges[variable].values;
+  const rawTimes = json.domain.axes.t.values;
+  const rawValues = json.ranges[variable].values;
+  const times = Array.isArray(rawTimes) ? rawTimes : Array.from(rawTimes);
+  const values = Array.isArray(rawValues) ? rawValues : Array.from(rawValues);
   return { times, values };
 }
 
 function Timeseries({ perVariableData }) {
   const [chartData, setChartData] = useState(null);
   const [error, setError] = useState("");
-
-  // Check for dark mode
-  useEffect(() => {
-    const checkTheme = () => {
-      document.body.classList.contains('dark-mode');
-    };
-
-    checkTheme();
-
-    const observer = new MutationObserver(checkTheme);
-    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     if (!perVariableData) {
@@ -71,50 +59,56 @@ function Timeseries({ perVariableData }) {
       return;
     }
 
-    const layers = [
-      { key: "hs", label: "Significant Wave Height (m)", colorIdx: 0, yAxisID: 'y' },
-      { key: "tpeak", label: "Peak Wave Period (s)", colorIdx: 1, yAxisID: 'y1' },
-      { key: "dirp", label: "Mean Wave Direction (°)", colorIdx: 2, yAxisID: 'y2' },
-    ];
+    try {
+      const layers = perVariableData.depth
+        ? [{ key: "depth", label: "Inundation Depth (m)", colorIdx: 1, yAxisID: 'y' }]
+        : [
+            { key: "hs", label: "Significant Wave Height (m)", colorIdx: 0, yAxisID: 'y' },
+            { key: "tm02", label: "Mean Wave Period (s)", colorIdx: 1, yAxisID: 'y1' },
+            { key: "tpeak", label: "Peak Wave Period (s)", colorIdx: 3, yAxisID: 'y1' },
+            { key: "dirm", label: "Mean Wave Direction (°)", colorIdx: 2, yAxisID: 'y2' },
+            { key: "dirp", label: "Peak Wave Direction (°)", colorIdx: 4, yAxisID: 'y2' },
+          ];
 
-    let labels = [];
-    const datasets = [];
+      let labels = [];
+      const datasets = [];
 
-    for (let idx = 0; idx < layers.length; idx++) {
-      const { key, label, colorIdx, yAxisID } = layers[idx];
-      const color = fixedColors[colorIdx % fixedColors.length];
-      const tsJson = perVariableData[key];
-      const ts = extractCoverageTimeseries(tsJson, key);
+      for (let idx = 0; idx < layers.length; idx++) {
+        const { key, label, colorIdx, yAxisID } = layers[idx];
+        const color = fixedColors[colorIdx % fixedColors.length];
+        const tsJson = perVariableData[key];
+        const ts = extractCoverageTimeseries(tsJson, key);
 
-      if (ts && ts.times && ts.values) {
-        if (labels.length === 0) {
-          labels = ts.times.map(v =>
-            typeof v === "string" && v.length > 15 ? v.substring(0, 16).replace("T", " ") : v
-          );
+        if (ts && Array.isArray(ts.times) && ts.times.length > 0 && Array.isArray(ts.values)) {
+          if (labels.length === 0) {
+            labels = ts.times.map(v =>
+              typeof v === "string" && v.length > 15 ? v.substring(0, 16).replace("T", " ") : v
+            );
+          }
+          datasets.push({
+            label: label,
+            data: ts.values,
+            borderColor: color,
+            backgroundColor: color,
+            yAxisID: yAxisID,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            borderWidth: 2,
+            tension: 0.1,
+          });
         }
-        datasets.push({
-          label: label,
-          data: ts.values,
-          borderColor: color,
-          backgroundColor: color,
-          yAxisID: yAxisID,
-          pointRadius: 3,
-          pointHoverRadius: 5,
-          borderWidth: 2,
-          tension: 0.1,
-        });
       }
-    }
 
-    if (datasets.length === 0) {
-      setError("No timeseries data returned.");
+      if (datasets.length === 0) {
+        setError("No timeseries data returned.");
+        setChartData(null);
+      } else {
+        setError("");
+        setChartData({ labels, datasets });
+      }
+    } catch (e) {
+      setError(e?.message || "Failed to process timeseries data.");
       setChartData(null);
-    } else {
-      setError("");
-      setChartData({
-        labels,
-        datasets,
-      });
     }
   }, [perVariableData]);
 

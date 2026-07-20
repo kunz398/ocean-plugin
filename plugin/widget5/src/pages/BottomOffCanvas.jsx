@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import Offcanvas from "react-bootstrap/Offcanvas";
 import { Maximize2, Minimize2 } from "lucide-react";
 import "./BottomOffCanvas.css";
+import { getCookForecastWmsDirectUrl } from "../config/threddsConfig";
 import Tabular from "./tabular.js";
 import Timeseries from "./timeseries.js";
 import RiskDetailsPanel from "../components/risk/RiskDetailsPanel";
@@ -72,7 +73,7 @@ async function fetchLayerTimeseries(layer, data) {
   // Normalize bbox axis order (expects lon,lat when SRS=CRS:84)
   const bbox = normalizeBboxToLonLat(data.bbox);
 
-  const baseUrl = "https://gemthreddshpc.spc.int/thredds/wms/POP/model/country/spc/forecast/hourly/COK/SWAN_UGRID.nc";
+  const baseUrl = getCookForecastWmsDirectUrl();
   const url =
     baseUrl +
     `?REQUEST=GetTimeseries` +
@@ -137,12 +138,12 @@ function getPreferredPanelHeight({ isRiskMode, isInundationMode, expanded = fals
 }
 
 const tabLabels = [
+  { key: "timeseries", label: "Timeseries" },
   { key: "tabular", label: "Tabular" },
-  { key: "timeseries", label: "Timeseries" }
 ];
 
 // Shared loading spinner used across all panel modes
-function PanelSpinner({ isDarkMode, message }) {
+function PanelSpinner({ isDarkMode, message, slowMessage }) {
   return (
     <div style={{
       display: "flex", flexDirection: "column", alignItems: "center",
@@ -157,21 +158,28 @@ function PanelSpinner({ isDarkMode, message }) {
       }} />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       <span style={{ fontSize: 13 }}>{message || "Loading…"}</span>
+      {slowMessage && (
+        <span style={{ fontSize: 11, opacity: 0.7, maxWidth: 260, textAlign: "center", lineHeight: 1.5 }}>
+          {slowMessage}
+        </span>
+      )}
     </div>
   );
 }
 
-function BottomOffCanvas({ show, onHide, data, currentSliderDate, onTimeSelect }) {
+function BottomOffCanvas({ show, onHide, data, currentSliderDate, onTimeSelect, onRiskThresholdsSaved }) {
   const offcanvasRef = useRef(null);
   const isRiskMode = data?.mode === "risk";
   const isInundationMode = data?.mode === "inundation";
+  const isDirectPointLoading = Boolean(data?.loading && !isRiskMode && !isInundationMode);
   const [height, setHeight] = useState(() => getPreferredPanelHeight({ isRiskMode, isInundationMode }));
   const [maxHeight, setMaxHeight] = useState(() => getMaxPanelHeight());
   const [isExpanded, setIsExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState("tabular");
+  const [activeTab, setActiveTab] = useState("timeseries");
   const [perVariableData, setPerVariableData] = useState({});
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState("");
+  const [slowFetch, setSlowFetch] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const minHeight = DEFAULT_MIN_HEIGHT;
 
@@ -290,6 +298,24 @@ function BottomOffCanvas({ show, onHide, data, currentSliderDate, onTimeSelect }
       setLoading(false);
       return () => { isMounted = false; };
     }
+    if (data?.perVariableData) {
+      setPerVariableData(data.perVariableData);
+      setFetchError("");
+      setLoading(false);
+      return () => { isMounted = false; };
+    }
+    if (data?.loading) {
+      setPerVariableData({});
+      setFetchError("");
+      setLoading(true);
+      return () => { isMounted = false; };
+    }
+    if (data?.error) {
+      setPerVariableData({});
+      setFetchError(data.error);
+      setLoading(false);
+      return () => { isMounted = false; };
+    }
     if (!data || !data.bbox || (data.x === undefined && data.i === undefined) || (data.y === undefined && data.j === undefined)) {
       setPerVariableData({});
       setFetchError("No data available");
@@ -297,29 +323,24 @@ function BottomOffCanvas({ show, onHide, data, currentSliderDate, onTimeSelect }
       return;
     }
     setLoading(true);
+    setSlowFetch(false);
     setFetchError("");
+    const slowTimer = setTimeout(() => setSlowFetch(true), 10000);
     (async () => {
-      const out = {};
-      let transpX, transpY;
-      for (let i = 0; i < variableDefs.length; i++) {
-        const { key } = variableDefs[i];
-        if (key === "transp_x") {
-          transpX = await fetchLayerTimeseries("transp_x", data);
-          transpY = await fetchLayerTimeseries("transp_y", data);
-          out["transp_x"] = transpX;
-          out["transp_y"] = transpY;
-        } else if (key === "transp_y") {
-          continue;
-        } else {
-          out[key] = await fetchLayerTimeseries(key, data);
-        }
-      }
+      // Expand transp_x into [transp_x, transp_y] so both are fetched in parallel
+      const fetchKeys = variableDefs.flatMap(d =>
+        d.key === 'transp_x' ? ['transp_x', 'transp_y'] : [d.key]
+      );
+      const results = await Promise.all(fetchKeys.map(key => fetchLayerTimeseries(key, data)));
       if (!isMounted) return;
+      const out = Object.fromEntries(fetchKeys.map((key, i) => [key, results[i]]));
       setPerVariableData(out);
       setLoading(false);
+      setSlowFetch(false);
+      clearTimeout(slowTimer);
       if (Object.values(out).every(x => !x)) setFetchError("No data returned from server.");
     })();
-    return () => { isMounted = false; };
+    return () => { isMounted = false; clearTimeout(slowTimer); };
   }, [data, isRiskMode, isInundationMode]);
 
   return (
@@ -444,9 +465,27 @@ function BottomOffCanvas({ show, onHide, data, currentSliderDate, onTimeSelect }
                 fontSize: 15,
                 letterSpacing: "-0.01em",
               }}>
-                Point Inundation Forecast
+                {data?.rangeWindow?.mode === 'rolling-48h'
+                  ? '48h Max Inundation'
+                  : data?.rangeWindow?.mode === 'custom'
+                    ? 'Custom Range Inundation'
+                    : 'Point Inundation Forecast'}
               </span>
-              {data?.lat != null && (
+              {data?.rangeWindow?.mode === 'custom' && data?.rangeWindow?.startTime && data?.rangeWindow?.endTime ? (
+                <span style={{
+                  fontSize: 11,
+                  color: isDarkMode ? "#cbd5e1" : "#475569",
+                  fontFamily: "ui-monospace, monospace",
+                  background: isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)",
+                  borderRadius: 5,
+                  padding: "2px 7px",
+                  whiteSpace: "nowrap",
+                }}>
+                  {new Date(data.rangeWindow.startTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                  {' – '}
+                  {new Date(data.rangeWindow.endTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                </span>
+              ) : data?.lat != null && (
                 <span style={{
                   fontSize: 11,
                   color: isDarkMode ? "#cbd5e1" : "#475569",
@@ -470,33 +509,71 @@ function BottomOffCanvas({ show, onHide, data, currentSliderDate, onTimeSelect }
               </span>
             </div>
           ) : (
-            <div role="tablist" aria-label="View mode" style={{ display: "flex" }}>
-              {tabLabels.map(tab => (
-                <button
-                  key={tab.key}
-                  role="tab"
-                  aria-selected={activeTab === tab.key}
-                  aria-controls={`tab-panel-${tab.key}`}
-                  id={`tab-btn-${tab.key}`}
-                  onClick={() => setActiveTab(tab.key)}
-                  style={{
-                    border: "none",
-                    borderBottom: activeTab === tab.key ? `2px solid ${isDarkMode ? "#60a5fa" : "#007bff"}` : "2px solid transparent",
-                    background: "none",
-                    padding: "8px 20px",
-                    marginRight: 8,
-                    fontWeight: activeTab === tab.key ? "bold" : "normal",
-                    color: activeTab === tab.key ? (isDarkMode ? "#60a5fa" : "#007bff") : (isDarkMode ? "#a1a1aa" : "#555"),
-                    cursor: "pointer",
-                    fontSize: 16,
-                    transition: "border-bottom 0.1s"
-                  }}
-                  tabIndex={activeTab === tab.key ? 0 : -1}
-                  type="button"
-                >
-                  {tab.label}
-                </button>
-              ))}
+            <div style={{ display: "flex", alignItems: "center", flex: 1, minWidth: 0, gap: 12 }}>
+              <div role="tablist" aria-label="View mode" style={{ display: "flex", flexShrink: 0 }}>
+                {tabLabels.map(tab => (
+                  <button
+                    key={tab.key}
+                    role="tab"
+                    aria-selected={activeTab === tab.key}
+                    aria-controls={`tab-panel-${tab.key}`}
+                    id={`tab-btn-${tab.key}`}
+                    onClick={() => setActiveTab(tab.key)}
+                    style={{
+                      border: "none",
+                      borderBottom: activeTab === tab.key ? `2px solid ${isDarkMode ? "#60a5fa" : "#007bff"}` : "2px solid transparent",
+                      background: "none",
+                      padding: "8px 20px",
+                      marginRight: 4,
+                      fontWeight: activeTab === tab.key ? "bold" : "normal",
+                      color: activeTab === tab.key ? (isDarkMode ? "#60a5fa" : "#007bff") : (isDarkMode ? "#a1a1aa" : "#555"),
+                      cursor: "pointer",
+                      fontSize: 15,
+                      transition: "border-bottom 0.1s"
+                    }}
+                    tabIndex={activeTab === tab.key ? 0 : -1}
+                    type="button"
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              {/* Location identity — variable name + coordinates so users know what and where */}
+              {data?.selectedLayer?.label && (
+                <span style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: isDarkMode ? "#93c5fd" : "#1d4ed8",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}>
+                  {data.selectedLayer.label}
+                </span>
+              )}
+              {data?.lat != null && (
+                <span style={{
+                  fontSize: 11,
+                  color: isDarkMode ? "#94a3b8" : "#64748b",
+                  fontFamily: "ui-monospace, monospace",
+                  background: isDarkMode ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.05)",
+                  borderRadius: 4,
+                  padding: "2px 7px",
+                  whiteSpace: "nowrap",
+                }}>
+                  {Math.abs(data.lat).toFixed(3)}°{data.lat < 0 ? 'S' : 'N'},{' '}
+                  {Math.abs(data.lng).toFixed(3)}°{data.lng < 0 ? 'W' : 'E'}
+                </span>
+              )}
+              <span style={{
+                marginLeft: "auto",
+                fontSize: 10,
+                color: isDarkMode ? "#64748b" : "#94a3b8",
+                fontFamily: "ui-monospace, monospace",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+              }}>
+                SWAN UGRID
+              </span>
             </div>
           )}
         </div>
@@ -536,30 +613,63 @@ function BottomOffCanvas({ show, onHide, data, currentSliderDate, onTimeSelect }
         aria-labelledby={(!isRiskMode && !isInundationMode) ? `tab-btn-${activeTab}` : undefined}
       >
         {isRiskMode ? (
-          <RiskDetailsPanel data={data} isDarkMode={isDarkMode} currentSliderDate={currentSliderDate} onTimeSelect={onTimeSelect} />
+          <RiskDetailsPanel data={data} isDarkMode={isDarkMode} currentSliderDate={currentSliderDate} onTimeSelect={onTimeSelect} onThresholdsSaved={onRiskThresholdsSaved} />
         ) : isInundationMode ? (
           data?.loading
             ? <PanelSpinner isDarkMode={isDarkMode} message="Loading depth timeseries…" />
-            : data?.error
+            : data?.noData
               ? (
                 <div style={{
                   textAlign: "center", padding: "2rem",
-                  color: isDarkMode ? "#f87171" : "#dc2626", fontSize: 13,
+                  color: isDarkMode ? "rgba(255,255,255,0.45)" : "#6b7280", fontSize: 13,
+                  lineHeight: 1.6,
                 }}>
-                  Failed to load timeseries: {data.error}
+                  <div style={{ fontSize: 22, marginBottom: "0.5rem" }}>🌊</div>
+                  <strong>No flood depth at this location</strong>
+                  <div style={{ marginTop: "0.4rem", fontSize: 12 }}>
+                    This area is not projected to flood during the forecast window.<br />
+                    Click on a coloured area of the inundation layer to see depth data.
+                  </div>
                 </div>
               )
-              : <InundationTimeseries
-                  timeseries={data?.timeseries}
-                  categories={data?.categories}
-                  isDarkMode={isDarkMode}
-                  currentSliderDate={currentSliderDate}
-                  onTimeSelect={onTimeSelect}
-                />
-        ) : loading
-          ? <PanelSpinner isDarkMode={isDarkMode} message="Loading wave data…" />
+              : data?.error
+                ? (
+                  <div style={{
+                    textAlign: "center", padding: "2rem",
+                    color: isDarkMode ? "#f87171" : "#dc2626", fontSize: 13,
+                  }}>
+                    Failed to load timeseries: {data.error}
+                  </div>
+                )
+                : <InundationTimeseries
+                    timeseries={data?.timeseries}
+                    categories={data?.categories}
+                    rangeWindow={data?.rangeWindow}
+                    isDarkMode={isDarkMode}
+                    currentSliderDate={currentSliderDate}
+                    onTimeSelect={onTimeSelect}
+                  />
+        ) : loading || isDirectPointLoading
+          ? <PanelSpinner
+              isDarkMode={isDarkMode}
+              message="Loading wave data…"
+              slowMessage={slowFetch ? "Still fetching — Zarr chunks can take up to a minute on first load." : null}
+            />
           : fetchError
-              ? <div style={{ color: "red", textAlign: "center" }}>{fetchError}</div>
+              ? (
+                <div style={{ textAlign: "center", padding: "2rem 1.5rem", lineHeight: 1.6 }}>
+                  <div style={{ fontSize: 24, marginBottom: "0.6rem" }}>🌊</div>
+                  <strong style={{ color: isDarkMode ? "#f87171" : "#dc2626", fontSize: 13 }}>
+                    {fetchError.includes("No data") ? "No wave data at this location" : fetchError}
+                  </strong>
+                  {fetchError.includes("No data") && (
+                    <div style={{ marginTop: "0.5rem", fontSize: 12, color: isDarkMode ? "#94a3b8" : "#6b7280" }}>
+                      This point may be outside the model domain or between grid points.<br />
+                      Try clicking directly on an island marker (blue dot on the map).
+                    </div>
+                  )}
+                </div>
+              )
               : <>
                   {activeTab === "tabular" && <Tabular perVariableData={perVariableData} />}
                   {activeTab === "timeseries" && (

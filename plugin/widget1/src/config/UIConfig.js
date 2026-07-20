@@ -77,7 +77,7 @@ export const UI_CONFIG = {
 
   // Variable labels
   VARIABLE_LABELS: {
-    'Significant Wave Height': 'Wave Height',
+    'Significant Wave Height': 'Significant Wave Height',
     'Inundation Depth': 'Inundation',
     'Peak Wave Period': 'Wave Period',
     'Mean Wave Period': 'Mean Period',
@@ -129,7 +129,7 @@ export const UI_CONFIG = {
 
   // Layer label mappings for display
   layerLabels: {
-    'Significant Wave Height': 'Wave Height',
+    'Significant Wave Height': 'Significant Wave Height',
     'Inundation Depth': 'Inundation',
     'Peak Wave Period': 'Wave Period',
     'Mean Wave Period': 'Mean Period',

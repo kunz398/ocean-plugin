@@ -1,11 +1,15 @@
-import React, { useEffect } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import Home from './pages/Home';
-import GPUParticleDemo from './pages/GPUParticleDemo';
 import './App.css';
 import Header from './components/header';
+import ErrorBoundary from './components/ErrorBoundary';
 import './utils/NotificationManager'; // Initialize notification system
 import { initConsoleErrorSuppressor } from './utils/ConsoleErrorSuppressor';
+
+// Lazy-load heavy pages so MapLibre GL, deck.gl, zarr, and Plotly are excluded
+// from the initial JS bundle (~7.8 MB → ~350 KB for first paint).
+const Home = lazy(() => import('./pages/Home'));
+const GPUParticleDemo = lazy(() => import('./pages/GPUParticleDemo'));
 
 function App() {
   useEffect(() => {
@@ -27,15 +31,16 @@ function App() {
         transition: 'background-color 0.3s ease'
       }}>
         <Header />
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/gpu-demo" element={<GPUParticleDemo />} />
-          {/* <Route path="/link1" element={<Link1 />} />
-          <Route path="/link2" element={<Link2 />} />
-          <Route path="/link3" element={<Link3 />} /> */}
-          {/* Redirect any unknown routes to home */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        {/* fallback={null}: the HTML splash screen in index.html stays visible
+            until the lazy chunk resolves and React renders the real content. */}
+        <Suspense fallback={null}>
+          <Routes>
+            <Route path="/" element={<ErrorBoundary><Home /></ErrorBoundary>} />
+            <Route path="/gpu-demo" element={<GPUParticleDemo />} />
+            {/* Redirect any unknown routes to home */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </div>
     </Router>
   );

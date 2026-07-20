@@ -15,9 +15,13 @@
     --btn-secondary-hover: #174a8c;
     --card-shadow: 0 2px 8px rgba(0,0,0,0.10);
     --card-shadow-hover: 0 4px 16px rgba(0,0,0,0.18);
+    --panel-shadow: 0 6px 18px rgba(25,30,40,0.16);
+    --sidebar-bg: rgba(255,255,255,0.92);
+    --sidebar-border: rgba(148,163,184,0.18);
+    --sidebar-accent: #0077b6;
   }
   
-body.dark-mode {
+[data-theme="dark"] {
     /* Dark mode palette */
     --color-primary: #60a5fa;
     --color-secondary: #a1a1aa;
@@ -34,9 +38,14 @@ body.dark-mode {
     --btn-secondary-hover: #23242a;
     --card-shadow: 0 2px 8px rgba(0,0,0,0.32);
     --card-shadow-hover: 0 4px 16px rgba(0,0,0,0.44);
+    --panel-shadow: 0 8px 24px rgba(0,0,0,0.48);
+    --sidebar-bg: rgba(0, 0, 0, 0.72);
+    --sidebar-border: rgba(255,255,255,0.08);
+    --sidebar-accent: #00d4ff;
     background-color: var(--color-background) !important;
     color: var(--color-text) !important;
   }
+
 
 /* Navbar styling */
 .navbar {
@@ -70,12 +79,12 @@ body.dark-mode {
 }
 
 /* Dark mode override for toggle */
-body.dark-mode .form-check-input {
+[data-theme="dark"] .form-check-input {
   background-color: var(--color-secondary) !important;
   border-color: var(--color-secondary) !important;
 }
 
-body.dark-mode .form-check-input:checked {
+[data-theme="dark"] .form-check-input:checked {
   background-color: var(--color-primary) !important;
   border-color: var(--color-primary) !important;
 }
@@ -98,6 +107,12 @@ body.dark-mode .form-check-input:checked {
 /* Body transition for theme switching */
 body {
   transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* helper: temporary transition class applied during theme change */
+.theme-transition *,
+.theme-transition {
+  transition: background-color 0.35s ease !important;
 }
 
 /* Navbar responsive adjustments */
@@ -147,6 +162,15 @@ body {
 
 .card-theme:hover {
   box-shadow: var(--card-shadow-hover) !important;
+}
+
+/* Floating panels (map legends, timelines) */
+.floating-panel {
+  background-color: var(--color-surface) !important;
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: var(--panel-shadow) !important;
+  border-radius: 6px;
+  transition: box-shadow 0.3s ease, background-color 0.3s ease;
 }
 
 /* Text classes that adapt to theme */
@@ -204,14 +228,14 @@ body {
 /* ===== ACCORDION DARK MODE STYLES ===== */
 
 /* Accordion container */
-body.dark-mode .accordion {
+[data-theme="dark"] .accordion {
   background-color: var(--color-surface) !important;
   
   border-radius: 8px !important;
 }
 
 /* Accordion items */
-body.dark-mode .accordion-item {
+[data-theme="dark"] .accordion-item {
   background-color: var(--color-surface) !important;
  
   border-radius: 6px !important;
@@ -219,7 +243,7 @@ body.dark-mode .accordion-item {
 }
 
 /* Accordion headers */
-body.dark-mode .accordion-button {
+[data-theme="dark"] .accordion-button {
   background-color: var(--color-surface) !important;
   color: var(--color-text) !important;
   
@@ -227,20 +251,20 @@ body.dark-mode .accordion-button {
   border-bottom: 2px solid var(--color-secondary) !important;
 }
 
-body.dark-mode .accordion-button:not(.collapsed) {
+[data-theme="dark"] .accordion-button:not(.collapsed) {
   background-color: var(--color-surface) !important;
   color: var(--color-text) !important;
  
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
 }
 
-body.dark-mode .accordion-button:hover {
+[data-theme="dark"] .accordion-button:hover {
   background-color: var(--color-background) !important;
   color: var(--color-text) !important;
   border-color: var(--color-primary) !important;
 }
 
-body.dark-mode .accordion-button:focus {
+[data-theme="dark"] .accordion-button:focus {
   background-color: var(--color-surface) !important;
   color: var(--color-text) !important;
   border-color: var(--color-primary) !important;
@@ -248,14 +272,14 @@ body.dark-mode .accordion-button:focus {
 }
 
 /* Accordion button collapsed state */
-body.dark-mode .accordion-button.collapsed {
+[data-theme="dark"] .accordion-button.collapsed {
   background-color: var(--color-surface) !important;
   color: var(--color-text) !important;
   border-bottom: 1px solid var(--color-secondary) !important;
 }
 
 /* Accordion body */
-body.dark-mode .accordion-body {
+[data-theme="dark"] .accordion-body {
   background-color: var(--color-surface) !important;
   color: var(--color-text) !important;
   border: 1px solid var(--color-secondary) !important;
@@ -265,42 +289,42 @@ body.dark-mode .accordion-body {
 }
 
 /* Accordion collapse */
-body.dark-mode .accordion-collapse {
+[data-theme="dark"] .accordion-collapse {
   border: 1px solid var(--color-secondary) !important;
   border-top: none !important;
   border-radius: 0 0 6px 6px !important;
 }
 
 /* Accordion button arrow icon */
-body.dark-mode .accordion-button::after {
+[data-theme="dark"] .accordion-button::after {
   background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23f1f5f9'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e") !important;
 }
 
-body.dark-mode .accordion-button:not(.collapsed)::after {
+[data-theme="dark"] .accordion-button:not(.collapsed)::after {
   background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23f1f5f9'%3e%3cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3e%3c/svg%3e") !important;
 }
 
 /* Form controls in dark mode */
-body.dark-mode .form-control {
+[data-theme="dark"] .form-control {
   background-color: var(--color-background) !important;
   border-color: var(--color-border) !important;
   color: var(--color-text) !important;
 }
 
-body.dark-mode .form-control:focus {
+[data-theme="dark"] .form-control:focus {
   background-color: var(--color-background) !important;
   border-color: var(--color-primary) !important;
   color: var(--color-text) !important;
   box-shadow: 0 0 0 0.25rem rgba(96, 165, 250, 0.25) !important;
 }
 
-body.dark-mode .form-select {
+[data-theme="dark"] .form-select {
   background-color: var(--color-background) !important;
   border-color: var(--color-border) !important;
   color: var(--color-text) !important;
 }
 
-body.dark-mode .form-select:focus {
+[data-theme="dark"] .form-select:focus {
   background-color: var(--color-background) !important;
  
   color: var(--color-text) !important;
@@ -308,38 +332,38 @@ body.dark-mode .form-select:focus {
 }
 
 /* Range input in dark mode */
-body.dark-mode input[type="range"] {
+[data-theme="dark"] input[type="range"] {
   background-color: var(--color-background) !important;
 }
 
-body.dark-mode input[type="range"]::-webkit-slider-thumb {
+[data-theme="dark"] input[type="range"]::-webkit-slider-thumb {
   background-color: var(--color-primary) !important;
 }
 
-body.dark-mode input[type="range"]::-moz-range-thumb {
+[data-theme="dark"] input[type="range"]::-moz-range-thumb {
   background-color: var(--color-primary) !important;
 }
 
 /* Button groups in dark mode */
-body.dark-mode .btn-group .btn {
+[data-theme="dark"] .btn-group .btn {
   background-color: var(--color-surface) !important;
   border-color: var(--color-border) !important;
   color: var(--color-text) !important;
 }
 
-body.dark-mode .btn-group .btn:hover {
+[data-theme="dark"] .btn-group .btn:hover {
   background-color: var(--color-background) !important;
   color: var(--color-text) !important;
 }
 
-body.dark-mode .btn-group .btn.active {
+[data-theme="dark"] .btn-group .btn.active {
   background-color: var(--color-primary) !important;
   border-color: var(--color-primary) !important;
   color: white !important;
 }
 
 /* Badge in dark mode */
-body.dark-mode .badge {
+[data-theme="dark"] .badge {
   background-color: var(--color-secondary) !important;
   color: var(--color-text) !important;
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { MARINE_CONFIG } from '../config/marineVariables.js';
 import { isRasterSourceLayer } from '../config/layerConfig';
-import SfincsRasterService from '../services/SfincsRasterService';
+import { createInundationProvider } from '../services/inundationProviderFactory';
 
 const SFINCS_PRELOAD_COUNT = 8;
 const SFINCS_FRAME_INTERVAL_MS = 2000;
@@ -36,7 +36,8 @@ export const useTimeAnimation = (
   selectedLayerConfig = null,
   inundationCategories = null,
   inundationMinDepth = null,
-  inundationResampleColors = false
+  inundationResampleColors = false,
+  rangeWindow = null
 ) => {
   const [sliderIndex, setSliderIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -97,13 +98,20 @@ export const useTimeAnimation = (
     ? currentSliderDate.toISOString()
     : new Date().toISOString();
 
+  const activeRangeWindow = rangeWindow && rangeWindow.mode !== 'single' ? rangeWindow : null;
+  const rangeWindowKey = activeRangeWindow
+    ? `range:${activeRangeWindow.mode}:${activeRangeWindow.startIndex ?? 0}-${activeRangeWindow.endIndex ?? 47}`
+    : null;
+
   const preloadRasterFrame = useCallback(async (index) => {
     if (!isRasterAnimation || !selectedLayerConfig || frameCount <= 0 || !rasterCacheSignature) {
       return false;
     }
 
     const normalizedIndex = ((index % frameCount) + frameCount) % frameCount;
-    const cacheKey = `${rasterCacheSignature}:${normalizedIndex}`;
+    const cacheKey = rangeWindowKey
+      ? `${rasterCacheSignature}:${rangeWindowKey}`
+      : `${rasterCacheSignature}:${normalizedIndex}`;
 
     if (rasterFrameCache.current.has(cacheKey)) {
       return true;
@@ -113,11 +121,12 @@ export const useTimeAnimation = (
       return rasterFramePromises.current.get(cacheKey);
     }
 
-    const rasterService = new SfincsRasterService(selectedLayerConfig.apiBase);
+    const provider = createInundationProvider(selectedLayerConfig.apiBase);
 
     const loadPromise = new Promise((resolve) => {
-      rasterService.preloadFrame({
+      provider.preloadFrame({
         timeIndex: normalizedIndex,
+        rangeWindow: activeRangeWindow,
         vmin: inundationMinDepth ?? selectedLayerConfig.rasterMinDepth,
         vmax: selectedLayerConfig.rasterMaxDepth,
         thresholdCategories: inundationCategories,
@@ -139,7 +148,7 @@ export const useTimeAnimation = (
 
     rasterFramePromises.current.set(cacheKey, loadPromise);
     return loadPromise;
-  }, [isRasterAnimation, selectedLayerConfig, frameCount, rasterCacheSignature, inundationCategories, inundationMinDepth, inundationResampleColors]);
+  }, [isRasterAnimation, selectedLayerConfig, frameCount, rasterCacheSignature, inundationCategories, inundationMinDepth, inundationResampleColors, activeRangeWindow, rangeWindowKey]);
 
   const evictRasterFrames = useCallback((focusIndex) => {
     if (!isRasterAnimation || rasterFrameCache.current.size <= SFINCS_MAX_CACHED_FRAMES || frameCount <= 0) {
@@ -198,9 +207,13 @@ export const useTimeAnimation = (
       return null;
     }
 
+    if (rangeWindowKey) {
+      return rasterFrameCache.current.get(`${rasterCacheSignature}:${rangeWindowKey}`) || null;
+    }
+
     const normalizedIndex = ((index % frameCount) + frameCount) % frameCount;
     return rasterFrameCache.current.get(`${rasterCacheSignature}:${normalizedIndex}`) || null;
-  }, [isRasterAnimation, frameCount, rasterCacheSignature]);
+  }, [isRasterAnimation, frameCount, rasterCacheSignature, rangeWindowKey]);
 
   // Performance monitoring and adaptive speed calculation
   const calculateOptimalSpeed = useCallback(() => {
@@ -329,13 +342,21 @@ export const useTimeAnimation = (
     }
   }, [capTime.loading, totalSteps, capTime.availableTimestamps, capTime.start, capTime.end, capTime.stepHours, isRasterAnimation, selectedLayerConfig, rasterCacheSignature]);
 
+  // Force stop playback when entering range-max mode
+  useEffect(() => {
+    if (activeRangeWindow) {
+      setIsPlaying(false);
+    }
+  }, [activeRangeWindow]);
+
   useEffect(() => {
     if (!isRasterAnimation || !selectedLayerConfig || capTime.loading || frameCount <= 0) {
       return;
     }
 
+    // For range-max modes, trigger a single preload of the range-max frame
     preloadRasterFrames(clampIndex(sliderIndex, totalSteps, minIndex)).catch(console.warn);
-  }, [isRasterAnimation, selectedLayerConfig, capTime.loading, frameCount, sliderIndex, totalSteps, minIndex, preloadRasterFrames]);
+  }, [isRasterAnimation, selectedLayerConfig, capTime.loading, frameCount, sliderIndex, totalSteps, minIndex, preloadRasterFrames, rangeWindowKey]);
 
   // Enhanced playback timer with adaptive timing and frame buffering
   useEffect(() => {
@@ -491,6 +512,8 @@ export const useTimeAnimation = (
     stepBackward,
     // Performance utilities
     trackFramePerformance,
-    getRasterFrame
+    getRasterFrame,
+    // Range-max window state (derived)
+    isRangeMaxMode: !!activeRangeWindow,
   };
 };

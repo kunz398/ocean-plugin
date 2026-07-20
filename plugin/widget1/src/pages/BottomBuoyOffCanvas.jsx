@@ -39,7 +39,7 @@ const MODEL_COLORS = [
 
 const MIN_HEIGHT = 100;
 const MAX_HEIGHT_FALLBACK = 800; // used if window size unavailable
-
+ 
 const MODEL_VARIABLES = ["hs_p1", "tp_p1", "dirp_p1"];
 const LATEST_CAPABILITY_URL = "https://gemthreddshpc.spc.int/thredds/wms/POP/model/country/spc/forecast/hourly/NIU/ForecastNiue_latest.nc?service=WMS&version=1.3.0&request=GetCapabilities";
 const PREVIOUS_CAPABILITY_URL = "https://gemthreddshpc.spc.int/thredds/wms/POP/model/country/spc/forecast/hourly/NIU/ForecastNiue_latest_01.nc?service=WMS&version=1.3.0&request=GetCapabilities";
@@ -287,7 +287,8 @@ function BottomBuoyOffCanvas({ show, onHide, buoyId }) {
   // Check for dark mode
   useEffect(() => {
     const checkTheme = () => {
-      const isDark = document.body.classList.contains('dark-mode');
+      const theme = document.documentElement.getAttribute('data-theme');
+      const isDark = theme === 'dark' || document.body.classList.contains('dark-mode');
       setIsDarkMode(isDark);
     };
 
@@ -295,7 +296,7 @@ function BottomBuoyOffCanvas({ show, onHide, buoyId }) {
 
     // Listen for theme changes
     const observer = new MutationObserver(checkTheme);
-    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
 
     return () => observer.disconnect();
   }, []);

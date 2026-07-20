@@ -625,7 +625,7 @@ class WMSTileLoadingService {
   getUserFriendlyErrorMessage(layerName) {
     const friendlyNames = {
       'dirm': 'Wave Direction',
-      'hs': 'Wave Height', 
+      'hs': 'Significant Wave Height', 
       'tm02': 'Wave Period',
       'tpeak': 'Peak Wave Period',
       'cook_forecast': 'Cook Islands Forecast'

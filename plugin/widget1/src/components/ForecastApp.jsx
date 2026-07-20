@@ -1,20 +1,37 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import './ForecastApp.css';
 import '../styles/MapMarker.css';
 import useMapInteraction from '../hooks/useMapInteraction';
 import { UI_CONFIG } from '../config/UIConfig';
 import { MARINE_CONFIG } from '../config/marineVariables';
 import CompassRose from './CompassRose';
-import { 
-  ControlGroup, 
-  VariableButtons, 
-  TimeControl, 
-  OpacityControl, 
-  DataInfo, 
-  //StatusBar 
+import BasemapSwitcher from './BasemapSwitcher';
+import ForecastTimeline from './ForecastTimeline';
+import InundationThresholdEditor from './InundationThresholdEditor';
+import { isInundationLayer } from '../config/layerConfig';
+import { buildBreakLegendConfig, buildInundationLegendBands } from '../domain/inundation/legendBands';
+import { getColormap } from '../lib/colormaps';
+import {
+  VESSEL_CLASSES,
+  SUITABILITY_MAP_HAZARD_LABELS,
+  SUITABILITY_HAZARD_COLORS,
+  VESSEL_OPERATING_ENVELOPE,
+  VESSEL_OPERATING_ENVELOPE_STATUS,
+} from '../lib/NiueSuitabilityOverlay';
+import AdvisoryPdfModal from './advisory/AdvisoryPdfModal';
+import UserGuide from './UserGuide';
+import LandingAreaPanel from './landingArea/LandingAreaPanel';
+import RouteForecastControls from './route/RouteForecastControls';
+import ScenarioComparisonPanel from './route/ScenarioComparisonPanel';
+import {
+  ControlGroup,
+  VariableButtons,
+  OpacityControl,
+  DataInfo,
+  //StatusBar
 } from './shared/UIComponents';
 import wmsStyleManager from '../utils/WMSStyleManager';
-import { Waves, Wind, Navigation, Activity, Info, Settings, Timer, Triangle,  BadgeInfo , CloudRain, FastForward} from 'lucide-react';
+import { Waves, Wind, Navigation, Activity, Info, Settings, Timer, Triangle,  BadgeInfo , CloudRain, FastForward, SlidersHorizontal, FileDown, Crosshair, MapPin, Route as RouteIcon, FileText, Ship, HelpCircle } from 'lucide-react';
 import FancyIcon from './FancyIcon';
 import '../styles/fancyIcons.css';
 
@@ -123,7 +140,100 @@ const DIRECTION_METADATA = [
   { value: 'NW (↖)', label: 'Northwest', description: 'Flowing toward the northwest', color: 'rgba(255, 255, 255, 0.3)' }
 ];
 
-const ForecastApp = ({ 
+// Arrow-key roving navigation for segmented radiogroup/tablist controls
+// (role="radiogroup"/"tablist" wrapping role="radio"/"tab" buttons) — the
+// WAI-ARIA APG expects Left/Right/Home/End to move both focus and selection
+// between options. Plain <button> elements only give free Tab-stop +
+// Enter/Space activation, not this roving behaviour, so every segmented
+// control in this file (wave motion, particle detail, swell sources, vessel
+// class, suitability tabs) wires this in via onKeyDown on its container.
+function handleSegmentedKeyDown(event) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  const items = Array.from(
+    event.currentTarget.querySelectorAll('[role="radio"], [role="tab"]')
+  ).filter((el) => !el.disabled);
+  if (!items.length) return;
+
+  const currentIndex = items.indexOf(document.activeElement);
+  let nextIndex;
+  if (event.key === 'Home') nextIndex = 0;
+  else if (event.key === 'End') nextIndex = items.length - 1;
+  else {
+    const delta = event.key === 'ArrowRight' ? 1 : -1;
+    const baseIndex = currentIndex === -1 ? 0 : currentIndex;
+    nextIndex = (baseIndex + delta + items.length) % items.length;
+  }
+
+  event.preventDefault();
+  items[nextIndex].focus();
+  items[nextIndex].click();
+}
+
+// The suitability side panel used to stack vessel class, PDF export,
+// landing-area picker, and route planner as flat siblings under one
+// "Display Options" heading — functional, but the user had to visually
+// parse four competing workflows at once. Splitting them into tabs keeps
+// vessel class (shared by all of them) visible while making each workflow
+// a deliberate choice.
+const SUITABILITY_TABS = [
+  { id: 'point', label: 'Point', short: 'Inspect', icon: Crosshair },
+  { id: 'landing', label: 'Landing', short: 'Launch', icon: MapPin },
+  { id: 'route', label: 'Route', short: 'Transit', icon: RouteIcon },
+  { id: 'advisory', label: 'Advisory', short: 'PDF', icon: FileText },
+];
+
+const VESSEL_SELECTOR_ICON_STEMS = {
+  traditional_craft: 'Vaka',
+  very_small_motorised_craft: 'Fishing Boat',
+  small_craft: 'Ferry',
+  larger_vessels: 'Container Ship',
+};
+
+const VESSEL_SELECTOR_ICON_COLORS = {
+  0: 'Green',
+  1: 'Amber',
+  2: 'Red',
+};
+
+const toFiniteNumberOrNull = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+};
+
+const normaliseVesselSummaryForIcon = (raw) => {
+  if (!raw) return null;
+  return {
+    hazard_class: toFiniteNumberOrNull(raw.hazard_class ?? raw.overall_hazard_class),
+    warning_percent: toFiniteNumberOrNull(raw.warning_percent ?? raw.percentages?.warning),
+    caution_percent: toFiniteNumberOrNull(raw.caution_percent ?? raw.percentages?.caution),
+    suitable_percent: toFiniteNumberOrNull(raw.suitable_percent ?? raw.percentages?.suitable),
+  };
+};
+
+const deriveVesselIconHazard = (raw) => {
+  const summary = normaliseVesselSummaryForIcon(raw);
+  if (!summary) return 0;
+  if (summary.hazard_class !== null) {
+    return Math.max(0, Math.min(2, Math.round(summary.hazard_class)));
+  }
+  if ((summary.warning_percent ?? 0) > 0) return 2;
+  if ((summary.caution_percent ?? 0) > 0) return 1;
+  return 0;
+};
+
+const getVesselSelectorIconSrc = (vesselCode, hazardClass = 0) => {
+  const stem = VESSEL_SELECTOR_ICON_STEMS[vesselCode];
+  if (!stem) return null;
+  const color = VESSEL_SELECTOR_ICON_COLORS[hazardClass] ?? 'Green';
+  const base = (process.env.PUBLIC_URL ?? '').replace(/\/$/, '');
+  return `${base}/vessels/${encodeURIComponent(`${stem} ${color}.svg`)}`;
+};
+
+// Advanced wave controls belong on the advanced-features branch. Keep the
+// implementation here dormant so this branch exposes only the core controls.
+const SHOW_ADVANCED_WAVE_CONTROLS = false;
+
+const ForecastApp = ({
   WAVE_FORECAST_LAYERS,
   ALL_LAYERS,
   selectedWaveForecast,
@@ -135,15 +245,163 @@ const ForecastApp = ({
   totalSteps,
   isPlaying,
   setIsPlaying,
+  playSpeedMs = 700,
+  setPlaySpeedMs,
   currentSliderDate,
   capTime,
   setActiveLayers,
   mapRef,
   mapInstance,
+  setBasemap,
   setBottomCanvasData,
   setShowBottomCanvas,
-  minIndex
+  minIndex,
+  enableLegacyMapInteraction = true,
+  waveParticleMode = 'off',
+  setWaveParticleMode,
+  particleQuality = 'balanced',
+  setParticleQuality,
+  swellSourcesEnabled = false,
+  setSwellSourcesEnabled,
+  selectedVessel = 'traditional_craft',
+  setSelectedVessel,
+  landingArea = null,
+  setLandingArea,
+  landingAreaPickMode = false,
+  setLandingAreaPickMode,
+  routePoints = [],
+  routePickMode = false,
+  setRoutePickMode,
+  routeSpeedKt = 8,
+  setRouteSpeedKt,
+  routeDepartureTime = '',
+  setRouteDepartureTime,
+  routeForecastLoading = false,
+  routeForecastError = '',
+  onRunRouteForecast,
+  onClearRoute,
+  onUndoRoutePoint,
+  onRouteImport,
+  scenarios = [],
+  confirmedScenarioId = null,
+  runningScenarioIds = [],
+  currentModelRunStart = null,
+  overlayStats = null,
+  onSaveCurrentAsScenario,
+  onDuplicateScenario,
+  onRemoveScenario,
+  onRunScenario,
+  onRunAllScenarios,
+  inundationThresholds,
 }) => {
+  const [timeDisplayZone, setTimeDisplayZone] = useState('Pacific/Niue');
+  const [showTimelineInPanel, setShowTimelineInPanel] = useState(false);
+  const [showThresholdEditor, setShowThresholdEditor] = useState(false);
+  const [showPdfModal, setShowPdfModal] = useState(false);
+  const [showUserGuide, setShowUserGuide] = useState(false);
+  const [suitabilityTab, setSuitabilityTab] = useState('point');
+  const [vesselIconHazards, setVesselIconHazards] = useState({});
+  const [vesselSuitabilitySummaries, setVesselSuitabilitySummaries] = useState({});
+  const [showSuitabilityHazardInfo, setShowSuitabilityHazardInfo] = useState(false);
+  const selectedLayerConfig = ALL_LAYERS.find((l) => l.value === selectedWaveForecast);
+  const isInundationSelected = isInundationLayer(selectedWaveForecast);
+  const isSwanLayer = selectedLayerConfig?.type === 'ugrid';
+  const isSuitabilitySelected = selectedLayerConfig?.sourceType === 'niue-suitability-raster';
+  const suitabilityApiBase = isSuitabilitySelected ? (selectedLayerConfig?.apiBase ?? '') : '';
+  const selectedVesselMeta = VESSEL_CLASSES.find((v) => v.value === selectedVessel) ?? VESSEL_CLASSES[0];
+  const selectedVesselEnvelope = VESSEL_OPERATING_ENVELOPE[selectedVessel] ?? null;
+
+  // A dominant single-class summary renders most/all of the raster tile as one
+  // flat color (e.g. mostly "Avoid"), which can read as visually indistinguishable
+  // from a broken/no-data layer. Surface the underlying percentage so it reads
+  // as confirmed hazard rather than a rendering glitch. The stats are domain-wide
+  // (not just the visible viewport) and the tile only uses 3 discrete colors with
+  // no gradient, so even a ~80% dominant class can visually look "flat" to a
+  // viewer — the threshold is set well below 100% to match that perception.
+  const DOMINANT_HAZARD_THRESHOLD_PERCENT = 75;
+  const selectedVesselSummary = vesselSuitabilitySummaries[selectedVessel] ?? null;
+  const dominantSuitabilityHazard = (() => {
+    if (!selectedVesselSummary) return null;
+    const { warning_percent: warn, caution_percent: caution, suitable_percent: suitable } = selectedVesselSummary;
+    const entries = [
+      [2, warn],
+      [1, caution],
+      [0, suitable],
+    ].filter(([, pct]) => Number.isFinite(pct));
+    if (!entries.length) return null;
+    const [hazardVal, pct] = entries.reduce((max, entry) => (entry[1] > max[1] ? entry : max));
+    return pct >= DOMINANT_HAZARD_THRESHOLD_PERCENT ? { hazardVal, pct } : null;
+  })();
+
+  useEffect(() => {
+    if (!isSuitabilitySelected || !suitabilityApiBase) {
+      setVesselIconHazards({});
+      setVesselSuitabilitySummaries({});
+      return undefined;
+    }
+
+    let cancelled = false;
+    const base = suitabilityApiBase.replace(/\/$/, '');
+
+    const fetchJson = async (url) => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Suitability summary ${response.status}`);
+      return response.json();
+    };
+
+    const loadIconHazards = async () => {
+      try {
+        const summaryUrl = `${base}/niue/suitability/summary/${sliderIndex}`;
+        const summary = await fetchJson(summaryUrl);
+        let vessels = summary?.vessels ?? null;
+
+        if (!vessels) {
+          const perVessel = await Promise.all(
+            VESSEL_CLASSES.map(async (vessel) => {
+              try {
+                const data = await fetchJson(`${summaryUrl}?vessel=${vessel.value}`);
+                return [vessel.value, data];
+              } catch (_) {
+                return [vessel.value, null];
+              }
+            })
+          );
+          vessels = Object.fromEntries(perVessel);
+        }
+
+        const nextHazards = {};
+        const nextSummaries = {};
+        VESSEL_CLASSES.forEach((vessel) => {
+          const entry = vessels?.[vessel.value] ?? (summary?.vessel === vessel.value ? summary : null);
+          nextHazards[vessel.value] = deriveVesselIconHazard(entry);
+          nextSummaries[vessel.value] = normaliseVesselSummaryForIcon(entry);
+        });
+
+        if (!cancelled) {
+          setVesselIconHazards(nextHazards);
+          setVesselSuitabilitySummaries(nextSummaries);
+        }
+      } catch (_) {
+        if (!cancelled) {
+          setVesselIconHazards({});
+          setVesselSuitabilitySummaries({});
+        }
+      }
+    };
+
+    loadIconHazards();
+    return () => {
+      cancelled = true;
+    };
+  }, [isSuitabilitySelected, sliderIndex, suitabilityApiBase]);
+
+  const handlePreviousTimestamp = useCallback(() => {
+    setSliderIndex((prev) => Math.max(minIndex ?? 0, prev - 1));
+  }, [setSliderIndex, minIndex]);
+
+  const handleNextTimestamp = useCallback(() => {
+    setSliderIndex((prev) => Math.min(totalSteps, prev + 1));
+  }, [setSliderIndex, totalSteps]);
   // Dynamic marine legend configuration - RESPONDS TO ACTUAL DATA
   const getLegendConfig = (variable, layerData) => {
     const varLower = variable.toLowerCase();
@@ -151,7 +409,20 @@ const ForecastApp = ({
     // Parse dynamic ranges from layer data
     const colorRange = layerData ? parseColorRange(layerData.colorscalerange) : null;
     const dynamicMax = layerData?.activeBeaufortMax;
-    
+
+    // Layers with fixed color-bin breakpoints (hs, tm02, tpeak) render discrete
+    // bands on the map (see UgridOverlay.js bandColors) — the legend must use
+    // the same breaks/colormap so it stays a single source of truth.
+    if (layerData?.colorBreaks?.length > 1) {
+      return buildBreakLegendConfig({
+        colorBreaks: layerData.colorBreaks,
+        colorLabels: layerData.colorLabels,
+        colorRange: { min: layerData.colorRange?.min ?? 0, max: layerData.colorRange?.max ?? 5 },
+        units: layerData.units ?? '',
+        colormapFn: getColormap(layerData.colormap),
+      });
+    }
+
     if (varLower.includes('hs')) {
       // DYNAMIC DATA RANGE - Updates with actual wave height data (Rainbow palette)
       const minVal = colorRange?.min ?? 0;
@@ -213,7 +484,7 @@ const ForecastApp = ({
       );
       
       return {
-        gradient: 'linear-gradient(to top, rgb(0, 0, 4), rgb(40, 11, 84), rgb(101, 21, 110), rgb(159, 42, 99), rgb(212, 72, 66), rgb(245, 125, 32), rgb(252, 194, 84), rgb(252, 253, 191))',
+        gradient: 'linear-gradient(to top, rgb(255, 255, 178), rgb(254, 204, 92), rgb(253, 141, 60), rgb(240, 59, 32), rgb(189, 0, 38))',
         min: minVal,
         max: maxVal,
         units: 's',
@@ -222,68 +493,18 @@ const ForecastApp = ({
     }
     
     if (varLower.includes('inun')) {
-      // TRULY DYNAMIC DATA RANGE - Updates with actual inundation data (Rainbow palette like wave height)
-      if (!colorRange) {
-        console.warn('No color range data available for inundation layer, using default');
-        // Use default range to allow rendering while data loads
-        const minVal = 0;
-        const maxVal = 9.0;
-        const ticks = [0, 2.25, 4.5, 6.75, 9];
-        
-        // Generate smooth rainbow gradient using interpolation (same as wave height)
-        const valueSpan = Math.max(maxVal - minVal, 0);
-        const gradientStopCount = Math.max(2, Math.min(128, Math.ceil(Math.max(valueSpan, 1) * 32)));
-        
-        const inundationGradient = [];
-        for (let i = 0; i < gradientStopCount; i++) {
-          const normalized = i / (gradientStopCount - 1);
-          inundationGradient.push(interpolateWaveHeight(normalized));
-        }
-        
-        const denominator = Math.max(inundationGradient.length - 1, 1);
-        const gradientStops = inundationGradient.map((color, index) => {
-          const percent = (index / denominator) * 100;
-          return `${color} ${percent.toFixed(2)}%`;
-        });
-        
-        const gradient = `linear-gradient(to top, ${gradientStops.join(', ')})`;
-        
-        return {
-          gradient,
-          min: minVal,
-          max: maxVal,
-          units: 'm',
-          ticks: ticks
-        };
-      }
-      const minVal = colorRange.min;
-      const maxVal = colorRange.max;
-      const ticks = [0, 2.25, 4.5, 6.75, 9];
-      
-      // Generate smooth rainbow gradient using interpolation (same as wave height)
-      const valueSpan = Math.max(maxVal - minVal, 0);
-      const gradientStopCount = Math.max(2, Math.min(128, Math.ceil(Math.max(valueSpan, 1) * 32)));
-      
-      const inundationGradient = [];
-      for (let i = 0; i < gradientStopCount; i++) {
-        const normalized = i / (gradientStopCount - 1);
-        inundationGradient.push(interpolateWaveHeight(normalized));
-      }
-      
-      const denominator = Math.max(inundationGradient.length - 1, 1);
-      const gradientStops = inundationGradient.map((color, index) => {
-        const percent = (index / denominator) * 100;
-        return `${color} ${percent.toFixed(2)}%`;
-      });
-      
-      const gradient = `linear-gradient(to top, ${gradientStops.join(', ')})`;
-      
+      // Bands, colors, and the visible-depth cutoff come from the live
+      // inundationThresholds editor state — not the raw WMS colorscalerange —
+      // so the legend always matches what the raster/chart are actually showing.
       return {
-        gradient,
-        min: minVal,
-        max: maxVal,
+        ...buildInundationLegendBands({
+          categories: inundationThresholds?.categories,
+          minVisibleDepth: inundationThresholds?.minVisibleDepth,
+          colorscalerange: layerData?.colorscalerange,
+          rasterMinDepth: colorRange?.min,
+          rasterMaxDepth: colorRange?.max,
+        }),
         units: 'm',
-        ticks: ticks
       };
     }
     
@@ -486,7 +707,7 @@ const ForecastApp = ({
     const value = layer.value?.toLowerCase() || '';
     const label = layer.label?.toLowerCase() || '';
     
-    if (value.includes('hs') || label.includes('wave height')) {
+    if (value.includes('hs') || label.includes('Significantwave height')) {
       return <FancyIcon icon={Waves} animationType="wave" size={14} color="#00bcd4" style={{ marginRight: '8px' }} />;
     }
     if (value.includes('tm02') || (label.includes('mean') && label.includes('period'))) {
@@ -501,6 +722,9 @@ const ForecastApp = ({
     if (value.includes('inun') || label.includes('inundation')) {
       return <FancyIcon icon={CloudRain} animationType="shimmer" size={14} color="#2196f3" style={{ marginRight: '8px' }} />;
     }
+    if (value.includes('suitab') || label.includes('suitability')) {
+      return <FancyIcon icon={Ship} animationType="pulse" size={14} color="#00bcd4" style={{ marginRight: '8px' }} />;
+    }
     if (value.includes('wind') || label.includes('wind')) {
       return <FancyIcon icon={Wind} animationType="wave" size={14} color="#795548" style={{ marginRight: '8px' }} />;
     }
@@ -512,7 +736,7 @@ const ForecastApp = ({
   // Effect to handle initial composite layer selection.
 
 
-  const handleVariableChange = (layerValue) => {
+  const handleVariableChange = useCallback((layerValue) => {
     // Check if this is a placeholder layer
     const selectedLayer = ALL_LAYERS.find(l => l.value === layerValue);
     if (selectedLayer?.isPlaceholder) {
@@ -522,7 +746,27 @@ const ForecastApp = ({
     
     setSelectedWaveForecast(layerValue);
     setActiveLayers(prev => ({ ...prev, waveForecast: true }));
-  };
+  }, [ALL_LAYERS, setActiveLayers, setSelectedWaveForecast]);
+
+  const handleUserGuideAction = useCallback((action) => {
+    if (!action) return;
+    if (action.type === 'timeline') {
+      setShowTimelineInPanel(true);
+      setShowUserGuide(false);
+      return;
+    }
+    if (action.type === 'layer') {
+      handleVariableChange(action.value);
+      if (action.value === 'suitability') setSuitabilityTab('point');
+      setShowUserGuide(false);
+      return;
+    }
+    if (action.type === 'suitabilityTab') {
+      handleVariableChange('suitability');
+      setSuitabilityTab(action.value);
+      setShowUserGuide(false);
+    }
+  }, [handleVariableChange]);
 
   const handlePlayToggle = () => {
     setIsPlaying(!isPlaying);
@@ -532,26 +776,15 @@ const ForecastApp = ({
     setSliderIndex(parseInt(value));
   };
 
-  const formatDateTime = (date) => {
-    if (!date) return 'Loading...';
-    return date.toLocaleString(undefined, {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    });
-  };
-
-  // Clean map interaction using service-based architecture
+  // Clean map interaction using service-based architecture. Disabled for the
+  // MapLibre/Zarr runtime because useZarrMap owns click/timeseries handling.
   useMapInteraction({
     mapInstance,
     currentSliderDate,
     setBottomCanvasData,
     setShowBottomCanvas,
-    debugMode: true // Enable debug logging
+    debugMode: true,
+    enabled: enableLegacyMapInteraction
   });
 
   return (
@@ -559,7 +792,13 @@ const ForecastApp = ({
       <div className="main-container">
         <div className="map-section">
           <div ref={mapRef} id="map" className="forecast-map"></div>
-          
+
+          <BasemapSwitcher
+            mapInstance={mapInstance}
+            setBasemap={setBasemap}
+            position="top-left"
+          />
+
           {/* Enhanced Professional Compass Rose */}
           <CompassRose 
             position="top-right" 
@@ -568,35 +807,118 @@ const ForecastApp = ({
             mapRotation={0} 
           />
           
-          {selectedLegendLayer && (
+          {selectedLegendLayer && selectedLegendLayer.sourceType === 'niue-suitability-raster' && (
+            <div className="marine-legend marine-legend--suitability">
+              <div
+                className="marine-legend-title"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}
+              >
+                <span>{selectedLegendLayer.label}</span>
+                {dominantSuitabilityHazard && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSuitabilityHazardInfo((v) => !v)}
+                    aria-expanded={showSuitabilityHazardInfo}
+                    aria-label={showSuitabilityHazardInfo ? 'Hide dominant hazard details' : 'Show dominant hazard details'}
+                    title={showSuitabilityHazardInfo ? 'Hide details' : 'Why is this all one color?'}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '14px',
+                      height: '14px',
+                      padding: 0,
+                      border: 'none',
+                      borderRadius: '50%',
+                      background: showSuitabilityHazardInfo ? 'var(--legend-accent)' : 'rgba(255,255,255,0.2)',
+                      color: showSuitabilityHazardInfo ? '#062b30' : 'rgba(255,255,255,0.85)',
+                      fontSize: '9px',
+                      lineHeight: 1,
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <i className="bi bi-info-lg" aria-hidden="true"></i>
+                  </button>
+                )}
+              </div>
+              <div className="marine-legend-content marine-legend-content--suitability">
+                {[0, 1, 2].map((hazardVal) => (
+                  <div key={hazardVal} className="marine-legend-suitability-row">
+                    <span
+                      className="marine-legend-suitability-swatch"
+                      style={{ background: SUITABILITY_HAZARD_COLORS[hazardVal] }}
+                    />
+                    <span>{SUITABILITY_MAP_HAZARD_LABELS[hazardVal]}</span>
+                  </div>
+                ))}
+              </div>
+              {dominantSuitabilityHazard && showSuitabilityHazardInfo && (
+                <div
+                  className="marine-legend-suitability-note"
+                  style={{
+                    marginTop: '8px',
+                    paddingTop: '8px',
+                    borderTop: '1px solid rgba(255,255,255,0.15)',
+                    fontSize: '0.72rem',
+                    lineHeight: 1.3,
+                    color: 'rgba(255,255,255,0.85)',
+                  }}
+                >
+                  Confirmed forecast: {Math.round(dominantSuitabilityHazard.pct)}% of the visible area is{' '}
+                  <strong style={{ color: SUITABILITY_HAZARD_COLORS[dominantSuitabilityHazard.hazardVal] }}>
+                    {SUITABILITY_MAP_HAZARD_LABELS[dominantSuitabilityHazard.hazardVal]}
+                  </strong>{' '}
+                  for {selectedVesselMeta?.label ?? 'this vessel'} — this is model data, not a display error.
+                </div>
+              )}
+            </div>
+          )}
+
+          {selectedLegendLayer && selectedLegendLayer.sourceType !== 'niue-suitability-raster' && (
             <div className="marine-legend">
               {(() => {
                 const legendConfig = getLegendConfig(selectedLegendLayer.value, selectedLegendLayer);
                 if (!legendConfig) return null;
-                
+
+                // Position by actual value, not index — required for colorBreaks
+                // legends (tm02/tpeak) whose breakpoints aren't evenly spaced.
+                const range = legendConfig.max - legendConfig.min;
+                const toPos = (val) => (range > 0 ? ((legendConfig.max - val) / range) * 100 : 0);
+
                 return (
                   <>
                     <div className="marine-legend-title">{selectedLegendLayer.label}</div>
                     <div className="marine-legend-content">
-                      <div 
+                      <div
                         className="marine-legend-gradient"
                         style={{ background: legendConfig.gradient }}
                       />
                       <div className="marine-legend-scale">
-                        {legendConfig.ticks.slice().reverse().map((tick, index) => {
-                          // Calculate position for each tick - evenly distribute from top (0%) to bottom (100%)
-                          const position = (index / (legendConfig.ticks.length - 1)) * 100;
+                        {legendConfig.ticks.map((tick) => {
+                          const band = legendConfig.tickBands?.[tick];
                           return (
-                            <div 
-                              key={`legend-tick-${index}-${tick}`} 
-                              className="marine-legend-tick"
+                            <div
+                              key={`legend-tick-${tick}`}
+                              className={`marine-legend-tick${band ? ' marine-legend-tick--labeled' : ''}`}
                               style={{
-                                top: `${position}%`,
+                                top: `${toPos(tick)}%`,
                                 transform: 'translateY(-50%)', // Center the tick on its position
                                 left: '0px'
                               }}
                             >
-                              {tick}{legendConfig.units}
+                              {band && (
+                                <span
+                                  className="marine-legend-tick__swatch"
+                                  style={{ background: band.color }}
+                                />
+                              )}
+                              <span className="marine-legend-tick__value">{tick}{legendConfig.units}</span>
+                              {band && (
+                                <span className="marine-legend-tick__severity">
+                                  <strong>{band.label}</strong>
+                                </span>
+                              )}
                             </div>
                           );
                         })}
@@ -743,10 +1065,43 @@ const ForecastApp = ({
               </div>
             </div>
           )} */}
+
+          {/* Bottom timeline overlay — always visible, drives all forecast layers */}
+          <ForecastTimeline
+            sliderIndex={sliderIndex}
+            totalSteps={totalSteps}
+            minIndex={minIndex}
+            currentSliderDate={currentSliderDate}
+            capTime={capTime}
+            isPlaying={isPlaying}
+            playSpeedMs={playSpeedMs}
+            timeDisplayZone={timeDisplayZone}
+            onTimeIndexChange={handleSliderChange}
+            onPlayPause={handlePlayToggle}
+            onPrevious={handlePreviousTimestamp}
+            onNext={handleNextTimestamp}
+            onSpeedChange={setPlaySpeedMs}
+            onTimezoneChange={setTimeDisplayZone}
+            showInPanel={showTimelineInPanel}
+            onTogglePanel={() => setShowTimelineInPanel((v) => !v)}
+          />
         </div>
 
         <div className="controls-panel">
           <div className="forecast-controls">
+            <button
+              type="button"
+              className="user-guide-trigger"
+              onClick={() => setShowUserGuide(true)}
+              aria-haspopup="dialog"
+            >
+              <span className="user-guide-trigger__main">
+                <HelpCircle size={17} />
+                User guide
+              </span>
+              <span className="user-guide-trigger__hint">Optional help</span>
+            </button>
+
             <ControlGroup
               icon={<FancyIcon icon={Activity} animationType="shimmer" color="#00bcd4" />}
               title={UI_CONFIG.SECTIONS.FORECAST_VARIABLES.title}
@@ -767,21 +1122,26 @@ const ForecastApp = ({
               title={UI_CONFIG.SECTIONS.FORECAST_TIME.title}
               ariaLabel={UI_CONFIG.SECTIONS.FORECAST_TIME.ariaLabel}
             >
-              <TimeControl
-                sliderIndex={sliderIndex}
-                totalSteps={totalSteps}
-                currentSliderDate={currentSliderDate}
-                isPlaying={isPlaying}
-                capTime={capTime}
-                onSliderChange={handleSliderChange}
-                onPlayToggle={handlePlayToggle}
-                formatDateTime={formatDateTime}
-                stepHours={capTime.stepHours || 1}
-                playIcon={<FancyIcon icon={Navigation} animationType="bounce" size={16} color="#4caf50" />}
-                pauseIcon={<FancyIcon icon={Activity} animationType="pulse" size={16} color="#ff5722" />}
-                minIndex={minIndex}
-              />
-              
+              {showTimelineInPanel && (
+                <ForecastTimeline
+                  inline
+                  sliderIndex={sliderIndex}
+                  totalSteps={totalSteps}
+                  minIndex={minIndex}
+                  currentSliderDate={currentSliderDate}
+                  capTime={capTime}
+                  isPlaying={isPlaying}
+                  playSpeedMs={playSpeedMs}
+                  timeDisplayZone={timeDisplayZone}
+                  onTimeIndexChange={handleSliderChange}
+                  onPlayPause={handlePlayToggle}
+                  onPrevious={handlePreviousTimestamp}
+                  onNext={handleNextTimestamp}
+                  onSpeedChange={setPlaySpeedMs}
+                  onTimezoneChange={setTimeDisplayZone}
+                />
+              )}
+
               {/* ✅ Warm-up Period Notice */}
               {MARINE_CONFIG.SHOW_WARMUP_NOTICE && capTime.warmupSkipped && (
                 <div style={{
@@ -802,7 +1162,38 @@ const ForecastApp = ({
                   </span>
                 </div>
               )}
-            </ControlGroup>            <ControlGroup
+            </ControlGroup>
+
+            {isInundationSelected && (
+              <ControlGroup
+                icon={<FancyIcon icon={SlidersHorizontal} animationType="pulse" color="#90caf9" />}
+                title="Inundation Thresholds"
+                ariaLabel="Inundation threshold configuration"
+              >
+                <div className="inundation-threshold-trigger">
+                  <button
+                    type="button"
+                    className={`inundation-threshold-trigger__btn${inundationThresholds.isDirty ? ' inundation-threshold-trigger__btn--dirty' : ''}`}
+                    onClick={() => setShowThresholdEditor(true)}
+                    title="Customise depth bands and severity labels"
+                  >
+                    <SlidersHorizontal size={14} />
+                    Edit Thresholds
+                    {inundationThresholds.isDirty && (
+                      <span className="inundation-threshold-trigger__badge" title="Unsaved changes">●</span>
+                    )}
+                  </button>
+                  <span className="inundation-threshold-trigger__count">
+                    {`${inundationThresholds.categories.length} bands`}
+                  </span>
+                </div>
+                <div className="inundation-threshold-trigger__hint">
+                  Refine depth bands and severity descriptions. Changes apply live to the map raster, legend, and popup.
+                </div>
+              </ControlGroup>
+            )}
+
+            <ControlGroup
               icon={<FancyIcon icon={Settings} animationType="spin" color="#9c27b0" />}
               title={UI_CONFIG.SECTIONS.DISPLAY_OPTIONS.title}
               ariaLabel={UI_CONFIG.SECTIONS.DISPLAY_OPTIONS.ariaLabel}
@@ -813,6 +1204,272 @@ const ForecastApp = ({
                 formatPercent={UI_CONFIG.FORMATS.opacityPercent}
                 ariaLabel={UI_CONFIG.ARIA_LABELS.overlayOpacity}
               />
+
+              {/* ── Wave motion (particles) ── only for SWAN UGRID layers */}
+              {SHOW_ADVANCED_WAVE_CONTROLS && isSwanLayer && (
+                <div className="map-display-option">
+                  <div className="map-display-option__label">Wave motion</div>
+                  <div className="map-display-option__segmented" role="radiogroup" aria-label="Wave motion mode" onKeyDown={handleSegmentedKeyDown}>
+                    {['off', 'particles', 'particles+raster'].map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        className={`map-display-option__btn${waveParticleMode === mode ? ' map-display-option__btn--active' : ''}`}
+                        role="radio"
+                        aria-checked={waveParticleMode === mode}
+                        onClick={() => setWaveParticleMode?.(mode)}
+                      >
+                        {mode === 'off' ? 'Off' : mode === 'particles' ? 'Particles' : 'Particles + raster'}
+                      </button>
+                    ))}
+                  </div>
+                  {waveParticleMode !== 'off' && (
+                    <>
+                      <div className="map-display-option__segmented" role="radiogroup" aria-label="Particle detail" style={{ marginTop: '0.4rem' }} onKeyDown={handleSegmentedKeyDown}>
+                        {['balanced', 'high'].map((q) => (
+                          <button
+                            key={q}
+                            type="button"
+                            className={`map-display-option__btn${particleQuality === q ? ' map-display-option__btn--active' : ''}`}
+                            role="radio"
+                            aria-checked={particleQuality === q}
+                            onClick={() => setParticleQuality?.(q)}
+                          >
+                            {q === 'balanced' ? 'Balanced' : 'High detail'}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="map-display-option__hint">
+                        {waveParticleMode === 'particles'
+                          ? 'Particle flow only — raster dimmed. Colours show wave height.'
+                          : 'Particles overlaid on the wave height raster.'}
+                        {particleQuality === 'high' ? ' High detail uses ~262 k particles.' : ' Balanced uses ~37 k particles.'}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* ── Swell source arcs ── only for SWAN UGRID layers */}
+              {SHOW_ADVANCED_WAVE_CONTROLS && isSwanLayer && (
+                <div className="map-display-option">
+                  <div className="map-display-option__label">Swell sources</div>
+                  <div className="map-display-option__segmented" role="radiogroup" aria-label="Swell source arcs" onKeyDown={handleSegmentedKeyDown}>
+                    <button
+                      type="button"
+                      className={`map-display-option__btn${!swellSourcesEnabled ? ' map-display-option__btn--active' : ''}`}
+                      role="radio"
+                      aria-checked={!swellSourcesEnabled}
+                      onClick={() => setSwellSourcesEnabled?.(false)}
+                    >
+                      Off
+                    </button>
+                    <button
+                      type="button"
+                      className={`map-display-option__btn${swellSourcesEnabled ? ' map-display-option__btn--active' : ''}`}
+                      role="radio"
+                      aria-checked={swellSourcesEnabled}
+                      onClick={() => setSwellSourcesEnabled?.(true)}
+                    >
+                      On
+                    </button>
+                  </div>
+                  <div className="map-display-option__hint">
+                    {swellSourcesEnabled
+                      ? 'Click anywhere on the wave layer to draw swell arrival direction arcs. Arc width scales with height.'
+                      : 'Shows primary / secondary / tertiary swell directions for a clicked point.'}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Vessel class ── shared by every suitability workflow below, so it
+                   stays visible above the tabs rather than living inside one of them. */}
+              {isSuitabilitySelected && (
+                <>
+                <div className="map-display-option suitability-control-card suitability-control-card--vessel">
+                  <div className="suitability-control-card__header">
+                    <div>
+                      <div className="map-display-option__label">Vessel class</div>
+                      {selectedVesselEnvelope && (
+                        <div className="suitability-control-card__subtext">
+                          {selectedVesselEnvelope.advisoryLevel} · {selectedVesselEnvelope.cautionWindKt}-{selectedVesselEnvelope.maxWindKt} kt · {selectedVesselEnvelope.waveText}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="map-display-option__segmented suitability-vessel-grid" role="radiogroup" aria-label="Vessel class" onKeyDown={handleSegmentedKeyDown}>
+                    {VESSEL_CLASSES.map((v) => {
+                      const iconHazard = vesselIconHazards[v.value] ?? 0;
+                      const iconSrc = getVesselSelectorIconSrc(v.value, iconHazard);
+                      return (
+                      <button
+                        key={v.value}
+                        type="button"
+                        className={`map-display-option__btn${selectedVessel === v.value ? ' map-display-option__btn--active' : ''}`}
+                        role="radio"
+                        aria-checked={selectedVessel === v.value}
+                        onClick={() => setSelectedVessel?.(v.value)}
+                      >
+                        <span className="suitability-vessel-card__top">
+                          {iconSrc ? (
+                            <img
+                              src={iconSrc}
+                              alt=""
+                              aria-hidden="true"
+                              className="suitability-vessel-card__icon"
+                            />
+                          ) : (
+                            <Ship size={13} />
+                          )}
+                          {v.label}
+                        </span>
+                      </button>
+                    );})}
+                  </div>
+                  <div className="suitability-forecast-classes">
+                    <span className="suitability-forecast-classes__label">Forecast classes</span>
+                    <div className="suitability-hazard-key" aria-label="Forecast classes">
+                      {[0, 1, 2].map((hazardVal) => (
+                        <span key={hazardVal} className="suitability-hazard-key__item">
+                          <span
+                            className="suitability-hazard-key__swatch"
+                            style={{ background: SUITABILITY_HAZARD_COLORS[hazardVal] }}
+                          />
+                          {SUITABILITY_MAP_HAZARD_LABELS[hazardVal]}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="suitability-control-card__footnote">
+                    {VESSEL_OPERATING_ENVELOPE_STATUS}
+                  </div>
+                </div>
+                </>
+              )}
+
+              {/* ── Suitability workflow tabs ── Point (default map click) / Landing
+                   Area / Route / Advisory used to be four flat, always-visible blocks
+                   competing for attention; splitting them into tabs makes "which
+                   workflow am I doing" an explicit choice instead of something the
+                   user has to scan for. */}
+              {isSuitabilitySelected && (
+                <div className="map-display-option suitability-control-card suitability-control-card--tools">
+                  <div className="suitability-control-card__header">
+                    <div className="map-display-option__label">Suitability tools</div>
+                  </div>
+                  <div
+                    className="map-display-option__segmented map-display-option__segmented--tabs suitability-tool-tabs"
+                    role="tablist"
+                    aria-label="Suitability workflow"
+                    onKeyDown={handleSegmentedKeyDown}
+                  >
+                    {SUITABILITY_TABS.map((tab) => (
+                      (() => {
+                        const TabIcon = tab.icon;
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            id={`suitability-tab-${tab.id}`}
+                            className={`map-display-option__btn${suitabilityTab === tab.id ? ' map-display-option__btn--active' : ''}`}
+                            role="tab"
+                            aria-selected={suitabilityTab === tab.id}
+                            aria-controls={`suitability-tabpanel-${tab.id}`}
+                            onClick={() => setSuitabilityTab(tab.id)}
+                          >
+                            <span className="suitability-tool-tab__icon"><TabIcon size={14} /></span>
+                            <span className="suitability-tool-tab__text">{tab.label}</span>
+                            <span className="suitability-tool-tab__short">{tab.short}</span>
+                          </button>
+                        );
+                      })()
+                    ))}
+                  </div>
+
+                  <div
+                    id="suitability-tabpanel-point"
+                    role="tabpanel"
+                    aria-labelledby="suitability-tab-point"
+                    hidden={suitabilityTab !== 'point'}
+                    className="suitability-tool-panel"
+                  >
+                    <div className="map-display-option__hint suitability-tool-panel__hint">
+                      Click the map to inspect the current forecast suitability class for {selectedVesselMeta?.label ?? 'the selected vessel'} at a specific point.
+                    </div>
+                  </div>
+
+                  <div
+                    id="suitability-tabpanel-landing"
+                    role="tabpanel"
+                    aria-labelledby="suitability-tab-landing"
+                    hidden={suitabilityTab !== 'landing'}
+                    className="suitability-tool-panel"
+                  >
+                    <LandingAreaPanel
+                      landingArea={landingArea}
+                      setLandingArea={setLandingArea}
+                      landingAreaPickMode={landingAreaPickMode}
+                      setLandingAreaPickMode={setLandingAreaPickMode}
+                    />
+                  </div>
+
+                  <div
+                    id="suitability-tabpanel-route"
+                    role="tabpanel"
+                    aria-labelledby="suitability-tab-route"
+                    hidden={suitabilityTab !== 'route'}
+                    className="suitability-tool-panel"
+                  >
+                    <RouteForecastControls
+                      routePoints={routePoints}
+                      routePickMode={routePickMode}
+                      setRoutePickMode={setRoutePickMode}
+                      routeSpeedKt={routeSpeedKt}
+                      setRouteSpeedKt={setRouteSpeedKt}
+                      routeDepartureTime={routeDepartureTime}
+                      setRouteDepartureTime={setRouteDepartureTime}
+                      routeForecastLoading={routeForecastLoading}
+                      routeForecastError={routeForecastError}
+                      onRunRouteForecast={onRunRouteForecast}
+                      onClearRoute={onClearRoute}
+                      onUndoRoutePoint={onUndoRoutePoint}
+                      onRouteImport={onRouteImport}
+                    />
+                    <ScenarioComparisonPanel
+                      scenarios={scenarios}
+                      highlightScenarioId={confirmedScenarioId}
+                      currentInputs={{ vessel: selectedVessel, routePoints, departureTime: routeDepartureTime, speedKt: routeSpeedKt }}
+                      currentModelRunStart={currentModelRunStart}
+                      runningScenarioIds={runningScenarioIds}
+                      onSaveCurrent={onSaveCurrentAsScenario}
+                      onDuplicate={onDuplicateScenario}
+                      onRemove={onRemoveScenario}
+                      onRun={onRunScenario}
+                      onRunAll={onRunAllScenarios}
+                    />
+                  </div>
+
+                  <div
+                    id="suitability-tabpanel-advisory"
+                    role="tabpanel"
+                    aria-labelledby="suitability-tab-advisory"
+                    hidden={suitabilityTab !== 'advisory'}
+                    className="suitability-tool-panel"
+                  >
+                    <div className="map-display-option__hint suitability-tool-panel__hint">
+                      Generate a PDF advisory for {selectedVesselMeta?.label ?? 'the selected vessel'} using the current forecast window.
+                    </div>
+                    <button
+                      type="button"
+                      className="map-display-option__btn suitability-advisory-action"
+                      onClick={() => setShowPdfModal(true)}
+                    >
+                      <FileDown size={13} style={{ marginRight: 6, verticalAlign: 'text-bottom' }} />
+                      Generate Advisory Brief
+                    </button>
+                  </div>
+                </div>
+              )}
             </ControlGroup>
 
             <ControlGroup
@@ -829,8 +1486,52 @@ const ForecastApp = ({
               />
             </ControlGroup>
           </div>
-        </div>        
+        </div>
       </div>
+
+      <InundationThresholdEditor
+        isOpen={showThresholdEditor}
+        onClose={() => setShowThresholdEditor(false)}
+        categories={inundationThresholds.categories}
+        paletteId={inundationThresholds.paletteId}
+        minVisibleDepth={inundationThresholds.minVisibleDepth}
+        validationErrors={inundationThresholds.validationErrors}
+        isDirty={inundationThresholds.isDirty}
+        savedAt={inundationThresholds.savedAt}
+        saveError={inundationThresholds.saveError}
+        canUndo={inundationThresholds.canUndo}
+        canRedo={inundationThresholds.canRedo}
+        updateRow={inundationThresholds.updateRow}
+        addRow={inundationThresholds.addRow}
+        removeRow={inundationThresholds.removeRow}
+        moveRow={inundationThresholds.moveRow}
+        updateMinVisibleDepth={inundationThresholds.updateMinVisibleDepth}
+        undo={inundationThresholds.undo}
+        redo={inundationThresholds.redo}
+        applyPalette={inundationThresholds.applyPalette}
+        save={inundationThresholds.save}
+        resetToDefaults={inundationThresholds.resetToDefaults}
+        exportJson={inundationThresholds.exportJson}
+        importJson={inundationThresholds.importJson}
+      />
+
+      <AdvisoryPdfModal
+        isOpen={showPdfModal}
+        onClose={() => setShowPdfModal(false)}
+        timeIndex={sliderIndex}
+        validTime={currentSliderDate?.toISOString?.() ?? null}
+        selectedVessel={selectedVessel}
+        suitabilityBaseUrl={ALL_LAYERS.find((l) => l.sourceType === 'niue-suitability-raster')?.apiBase ?? ''}
+        mapInstance={mapInstance}
+        landingArea={landingArea}
+        setLandingArea={setLandingArea}
+      />
+
+      <UserGuide
+        isOpen={showUserGuide}
+        onClose={() => setShowUserGuide(false)}
+        onAction={handleUserGuideAction}
+      />
     </div>
   );
 };

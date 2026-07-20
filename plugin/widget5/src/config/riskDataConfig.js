@@ -1,3 +1,5 @@
+import { getSfincsRasterApiBase } from './sfincsRasterConfig';
+
 // const publicBaseUrl = process.env.PUBLIC_URL || '';
 const defaultThreddsRiskBaseUrl =
   'https://gemthreddshpc.spc.int/thredds/fileServer/POP/model/country/spc/forecast/hourly/COK/risk';
@@ -17,3 +19,8 @@ export const getRiskPointsUrl = () => (
 export const getRiskDetailsUrl = (pointId) => (
   `${RISK_DATA_CONFIG.basePath}/${RISK_DATA_CONFIG.detailsDirectory}/${pointId}.json`
 );
+
+// Per-point Minor/Moderate threshold overrides — served by zarr-api (the app's own
+// writable backend), NOT the read-only THREDDS fileServer above.
+export const getRiskThresholdsUrl = () => `${getSfincsRasterApiBase()}/risk/thresholds`;
+export const getRiskThresholdUrl = (pointId) => `${getSfincsRasterApiBase()}/risk/thresholds/${pointId}`;

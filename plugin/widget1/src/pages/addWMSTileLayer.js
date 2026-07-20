@@ -114,7 +114,6 @@ const addWMSTileLayer = (map, url, options = {}, handleShow) => {
     // Enhanced error handling with timeout
     const RETRY_LIMIT = 2; // Reduced from 3
     const RETRY_DELAY = 2000; // Reduced from 3000ms
-    const TILE_TIMEOUT = 8000; // 8 second timeout
 
     const handleTileError = (event) => {
         const tile = event.tile;

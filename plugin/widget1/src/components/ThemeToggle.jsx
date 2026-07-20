@@ -1,35 +1,51 @@
 import React, { useState, useEffect } from 'react';
 
+function initialDarkMode() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return true;
+  const saved = localStorage.getItem('ui-theme') || localStorage.getItem('theme');
+  const docTheme = document.documentElement.getAttribute('data-theme');
+  if (saved === 'day' || saved === 'light' || docTheme === 'day') return false;
+  return true;
+}
+
 export default function ThemeToggle() {
-  const [isDark, setIsDark] = useState(true); // Default to dark mode
+  const [isDark, setIsDark] = useState(initialDarkMode);
 
   useEffect(() => {
-    // Load theme from localStorage on component mount
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'light') {
+    // Load theme from localStorage or existing document attribute
+    const saved = localStorage.getItem('ui-theme') || localStorage.getItem('theme');
+    const docTheme = document.documentElement.getAttribute('data-theme');
+    if (saved === 'day' || saved === 'light' || docTheme === 'day') {
       setIsDark(false);
-      document.body.classList.remove('dark-mode');
-    } else if (savedTheme === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'day');
+    } else if (saved === 'dark' || docTheme === 'dark') {
       setIsDark(true);
-      document.body.classList.add('dark-mode');
+      document.documentElement.setAttribute('data-theme', 'dark');
     } else {
-      // Default: use dark mode and persist
+      // Dark is the product default. An explicit saved day preference above
+      // still wins on subsequent visits.
       setIsDark(true);
-      document.body.classList.add('dark-mode');
-      localStorage.setItem('theme', 'dark');
+      document.documentElement.setAttribute('data-theme', 'dark');
+      localStorage.setItem('ui-theme', 'dark');
     }
   }, []);
 
+  const applyTransition = () => {
+    const el = document.documentElement;
+    el.classList.add('theme-transition');
+    window.setTimeout(() => el.classList.remove('theme-transition'), 350);
+  };
+
   const toggleTheme = () => {
-    const newTheme = !isDark;
-    setIsDark(newTheme);
-    
-    if (newTheme) {
-      document.body.classList.add('dark-mode');
-      localStorage.setItem('theme', 'dark');
+    const newIsDark = !isDark;
+    setIsDark(newIsDark);
+    applyTransition();
+    if (newIsDark) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+      localStorage.setItem('ui-theme', 'dark');
     } else {
-      document.body.classList.remove('dark-mode');
-      localStorage.setItem('theme', 'light');
+      document.documentElement.setAttribute('data-theme', 'day');
+      localStorage.setItem('ui-theme', 'day');
     }
   };
 

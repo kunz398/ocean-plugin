@@ -66,10 +66,10 @@ export default function ExampleButtons() {
           <button 
             className="btn"
             style={{
-              backgroundColor: document.body.classList.contains('dark-mode') 
+              backgroundColor: document.documentElement.getAttribute('data-theme') === 'dark' 
                 ? '#60a5fa' 
                 : '#2563eb',
-              borderColor: document.body.classList.contains('dark-mode') 
+              borderColor: document.documentElement.getAttribute('data-theme') === 'dark' 
                 ? '#60a5fa' 
                 : '#2563eb',
               color: 'white'
