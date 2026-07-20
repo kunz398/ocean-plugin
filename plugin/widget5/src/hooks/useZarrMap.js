@@ -6,7 +6,7 @@ import { ZarrOverlay } from '../lib/ZarrOverlay';
 import { UgridOverlay } from '../lib/UgridOverlay';
 import { SfincsRasterOverlay } from '../lib/SfincsRasterOverlay';
 import { SfincsColumnOverlay } from '../lib/SfincsColumnOverlay';
-import { findLayerById, RAROTONGA_ORTHO_2018_CONFIG } from '../lib/mapLayersConfig';
+import { findLayerById } from '../lib/mapLayersConfig';
 import { BASEMAP_LAYER_ID, BASEMAP_OPTIONS } from '../config/basemapConfig';
 import { ISLAND_ZOOM_TARGETS } from '../config/islandConfig';
 import {
@@ -28,20 +28,9 @@ const ESRI_SAT_STYLE = {
       attribution: 'Tiles © Esri',
       maxzoom: 19,
     },
-    [RAROTONGA_ORTHO_2018_CONFIG.sourceId]: {
-      type: 'raster',
-      tiles: RAROTONGA_ORTHO_2018_CONFIG.tiles,
-      tileSize: RAROTONGA_ORTHO_2018_CONFIG.tileSize,
-      minzoom: RAROTONGA_ORTHO_2018_CONFIG.minzoom,
-      maxzoom: RAROTONGA_ORTHO_2018_CONFIG.maxzoom,
-      bounds: RAROTONGA_ORTHO_2018_CONFIG.bounds,
-      attribution: RAROTONGA_ORTHO_2018_CONFIG.attribution,
-    },
   },
   layers: [
     { id: 'sat', type: 'raster', source: 'sat' },
-    // Sits above Esri; transparent outside its footprint / below minzoom, so Esri shows through.
-    { id: RAROTONGA_ORTHO_2018_CONFIG.layerId, type: 'raster', source: RAROTONGA_ORTHO_2018_CONFIG.sourceId },
   ],
 };
 
@@ -100,7 +89,6 @@ export function useZarrMap({
   playSpeedMs = 700,
   terrainEnabled = false,
   terrainConfig = null,
-  showOrtho2018 = true,
   flood3dEnabled = false,
   flood3dConfig = null,
   flood3dElevScale = null,
@@ -392,30 +380,6 @@ export function useZarrMap({
     return () => map.off('load', applyTerrain);
   }, [terrainEnabled, terrainConfig, selectedLayerId]);
 
-  // ── optional: hide the local high-res 2018 aerial overlay, showing only
-  // the Esri "sat" basemap underneath. Terrain draping is a global scene
-  // property (map.setTerrain()), not per-layer, so the basemap still drapes
-  // over 3D terrain exactly like the ortho overlay does when it's visible.
-  useEffect(() => {
-    const map = mapInstance.current;
-    if (!map) return;
-
-    const applyVisibility = () => {
-      if (map.getLayer(RAROTONGA_ORTHO_2018_CONFIG.layerId)) {
-        map.setLayoutProperty(
-          RAROTONGA_ORTHO_2018_CONFIG.layerId,
-          'visibility',
-          showOrtho2018 ? 'visible' : 'none'
-        );
-      }
-    };
-
-    if (map.loaded()) applyVisibility();
-    else map.once('load', applyVisibility);
-
-    return () => map.off('load', applyVisibility);
-  }, [showOrtho2018]);
-
   // ── 3D flood column overlay ───────────────────────────────────────────────
   useEffect(() => {
     const map = mapInstance.current;
@@ -681,19 +645,18 @@ export function useZarrMap({
     const option = BASEMAP_OPTIONS.find((b) => b.id === basemapId);
     if (!option) return;
 
-    const applySwap = () => {
-      if (map.getLayer(BASEMAP_LAYER_ID)) map.removeLayer(BASEMAP_LAYER_ID);
-      if (map.getSource(BASEMAP_LAYER_ID)) map.removeSource(BASEMAP_LAYER_ID);
-      map.addSource(BASEMAP_LAYER_ID, option.source);
-      const firstLayerId = map.getStyle()?.layers?.[0]?.id;
-      map.addLayer({ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_LAYER_ID }, firstLayerId);
-    };
-
-    if (map.isStyleLoaded()) {
-      applySwap();
-    } else {
-      map.once('load', applySwap);
-    }
+    // addSource/addLayer/removeLayer are safe any time after the map exists —
+    // no need to gate on isStyleLoaded(), which also reflects whether raster
+    // tile sources have finished loading and can be false during ordinary
+    // panning/zooming. Gating on it made this silently no-op: it fell back to
+    // map.once('load', ...), but 'load' only ever fires once in a map's
+    // lifetime (at initial style load), so that listener would never fire
+    // again and the basemap switch would just be dropped.
+    if (map.getLayer(BASEMAP_LAYER_ID)) map.removeLayer(BASEMAP_LAYER_ID);
+    if (map.getSource(BASEMAP_LAYER_ID)) map.removeSource(BASEMAP_LAYER_ID);
+    map.addSource(BASEMAP_LAYER_ID, option.source);
+    const firstLayerId = map.getStyle()?.layers?.[0]?.id;
+    map.addLayer({ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_LAYER_ID }, firstLayerId);
   }, []);
 
   // ── capTime compatibility shim for ForecastApp/InundationWindowControl ─────

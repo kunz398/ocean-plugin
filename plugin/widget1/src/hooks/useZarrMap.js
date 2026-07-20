@@ -832,19 +832,18 @@ export function useZarrMap({
     const option = BASEMAP_OPTIONS.find((b) => b.id === basemapId);
     if (!option) return;
 
-    const applySwap = () => {
-      if (map.getLayer(BASEMAP_LAYER_ID)) map.removeLayer(BASEMAP_LAYER_ID);
-      if (map.getSource(BASEMAP_LAYER_ID)) map.removeSource(BASEMAP_LAYER_ID);
-      map.addSource(BASEMAP_LAYER_ID, option.source);
-      const firstLayerId = map.getStyle()?.layers?.[0]?.id;
-      map.addLayer({ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_LAYER_ID }, firstLayerId);
-    };
-
-    if (map.isStyleLoaded()) {
-      applySwap();
-    } else {
-      map.once('load', applySwap);
-    }
+    // addSource/addLayer/removeLayer are safe any time after the map exists —
+    // no need to gate on isStyleLoaded(), which also reflects whether raster
+    // tile sources have finished loading and can be false during ordinary
+    // panning/zooming. Gating on it made this silently no-op: it fell back to
+    // map.once('load', ...), but 'load' only ever fires once in a map's
+    // lifetime (at initial style load), so that listener would never fire
+    // again and the basemap switch would just be dropped.
+    if (map.getLayer(BASEMAP_LAYER_ID)) map.removeLayer(BASEMAP_LAYER_ID);
+    if (map.getSource(BASEMAP_LAYER_ID)) map.removeSource(BASEMAP_LAYER_ID);
+    map.addSource(BASEMAP_LAYER_ID, option.source);
+    const firstLayerId = map.getStyle()?.layers?.[0]?.id;
+    map.addLayer({ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_LAYER_ID }, firstLayerId);
   }, []);
 
   // ── capTime compatibility shim for ForecastApp/InundationWindowControl ─────

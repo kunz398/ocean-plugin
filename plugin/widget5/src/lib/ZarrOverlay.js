@@ -2,8 +2,13 @@
 // Adapted from zarr_web/src/lib/zarrOverlay.ts (TypeScript stripped, zarrita → zarr v0.6.3).
 import { MapboxOverlay } from '@deck.gl/mapbox';
 import { BitmapLayer } from '@deck.gl/layers';
-import { openArray, HTTPStore } from 'zarr';
 import { getColormap } from './colormaps';
+import { withRetry } from './withRetry';
+import { renderToCanvas } from './canvasRaster';
+import {
+  LAT_NAMES, LON_NAMES, TIME_NAMES,
+  fetchConsolidatedMeta, getVarAttrs, getVarMeta, discoverCoord, openZarrArray, applyScaleOffset,
+} from './zarrClient';
 
 // ── zarr helpers ─────────────────────────────────────────────────────────────
 function buildZarrUrl(datasetName, baseUrl) {
@@ -11,102 +16,6 @@ function buildZarrUrl(datasetName, baseUrl) {
     .replace(/\/+$/, '');
   const ds = datasetName.replace(/^\/+/, '').replace(/\/+$/, '');
   return `${base}/${ds}`;
-}
-
-async function fetchConsolidatedMeta(storeUrl) {
-  const resp = await fetch(`${storeUrl}/.zmetadata`);
-  if (!resp.ok) throw new Error(`.zmetadata not found at ${storeUrl}`);
-  return resp.json();
-}
-
-function getVarAttrs(consolidated, varName) {
-  return consolidated?.metadata?.[`${varName}/.zattrs`] ?? {};
-}
-
-function getVarMeta(consolidated, varName) {
-  return consolidated?.metadata?.[`${varName}/.zarray`] ?? null;
-}
-
-async function openZarrArray(storeUrl, varPath) {
-  const store = new HTTPStore(storeUrl, { fetchOptions: { credentials: 'omit' } });
-  // zarr.js sends HEAD requests for containsItem() checks; the zarr-api only supports GET.
-  // Override containsItem to use GET instead of HEAD to avoid 405 errors.
-  store.containsItem = async (key) => {
-    try {
-      const url = `${storeUrl}/${key}`;
-      const resp = await fetch(url, { method: 'GET', credentials: 'omit' });
-      return resp.status === 200;
-    } catch { return false; }
-  };
-  return openArray({ store, path: varPath, mode: 'r' });
-}
-
-// ── coordinate discovery ──────────────────────────────────────────────────────
-// Try common name variants for lat, lon, time coords.
-const LAT_NAMES = ['lat', 'latitude', 'y', 'nav_lat'];
-const LON_NAMES = ['lon', 'longitude', 'x', 'nav_lon'];
-const TIME_NAMES = ['time', 'timemax', 'Time'];
-
-function discoverCoord(consolidated, variants) {
-  for (const name of variants) {
-    if (consolidated?.metadata?.[`${name}/.zarray`]) return name;
-  }
-  return null;
-}
-
-// ── data decoding ─────────────────────────────────────────────────────────────
-function applyScaleOffset(raw, attrs) {
-  const scale = Number(attrs?.scale_factor ?? 1);
-  const offset = Number(attrs?.add_offset ?? 0);
-  const fillValue = attrs?._FillValue !== undefined ? Number(attrs._FillValue) : null;
-  if (scale === 1 && offset === 0 && fillValue === null) return raw;
-  const out = new Float32Array(raw.length);
-  for (let i = 0; i < raw.length; i++) {
-    const v = raw[i];
-    out[i] = (fillValue !== null && v === fillValue) ? NaN : v * scale + offset;
-  }
-  return out;
-}
-
-// ── canvas rendering ──────────────────────────────────────────────────────────
-function renderToCanvas(values, rows, cols, colormap, vmin, vmax, opacity, thresholds) {
-  const canvas = document.createElement('canvas');
-  canvas.width = cols;
-  canvas.height = rows;
-  const ctx = canvas.getContext('2d');
-  const imgData = ctx.createImageData(cols, rows);
-  const px = imgData.data;
-  const span = vmax - vmin || 1;
-  const alpha = Math.round(opacity * 255);
-  const hasThresholds = thresholds?.length > 0;
-
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      const v = values[r * cols + c];
-      const pxIdx = (r * cols + c) * 4;
-      if (!Number.isFinite(v) || v <= 0) { px[pxIdx + 3] = 0; continue; }
-      let color;
-      if (hasThresholds) {
-        // find which threshold band this value falls in
-        color = null;
-        for (let t = thresholds.length - 1; t >= 0; t--) {
-          if (v >= thresholds[t].value) { color = thresholds[t].color; break; }
-        }
-        if (!color) { px[pxIdx + 3] = 0; continue; }
-      } else {
-        const t = Math.max(0, Math.min(1, (v - vmin) / span));
-        color = colormap(t);
-      }
-      px[pxIdx] = color[0];
-      px[pxIdx + 1] = color[1];
-      px[pxIdx + 2] = color[2];
-      px[pxIdx + 3] = alpha;
-    }
-  }
-  ctx.putImageData(imgData, 0, 0);
-  const visibleCount = Array.from({ length: rows * cols }, (_, i) => imgData.data[i * 4 + 3] > 0).filter(Boolean).length;
-  console.log(`[ZarrOverlay] canvas ${cols}×${rows}: ${visibleCount}/${rows * cols} visible pixels`);
-  return canvas;
 }
 
 // ── main class ────────────────────────────────────────────────────────────────
@@ -232,7 +141,10 @@ export class ZarrOverlay {
       : this.variableArr.shape.length === 2
         ? [null, null]
         : [timeIndex];
-    const raw = await this.variableArr.get(selection).then(r => r.data);
+    // .get() returns a NestedArray for multi-dim results — .data is an array of
+    // arrays, not a flat typed array. .flatten() gives the row-major flat buffer
+    // that renderToCanvas's `values[r * cols + c]` indexing actually needs.
+    const raw = await this.variableArr.get(selection).then(r => r.flatten());
     return applyScaleOffset(raw, this.varAttrs);
   }
 
@@ -243,7 +155,18 @@ export class ZarrOverlay {
     try {
       let cached = this.cachedFrames.get(timeIndex);
       if (!cached) {
-        const values = await this._fetchValues(timeIndex);
+        // Transient network errors during playback (e.g. a dropped chunk fetch)
+        // shouldn't surface as a fatal "Layer error" banner — retry with backoff
+        // first, and only bail out if this frame request has gone stale anyway.
+        const values = await withRetry(
+          () => this._fetchValues(timeIndex),
+          {
+            shouldAbort: () => !this.mounted || requestId !== this.renderRequestId,
+            onRetry: (err, attempt, delay) => {
+              console.warn(`[ZarrOverlay] fetch failed for frame ${timeIndex} (attempt ${attempt}), retrying in ${delay}ms`, err);
+            },
+          }
+        );
         if (!this.mounted || requestId !== this.renderRequestId) return;
         const { rows, cols } = this.dataset;
         const vmin = this.config.colorRange?.min ?? 0;
@@ -273,8 +196,12 @@ export class ZarrOverlay {
       this.onTimeChange?.(this.dataset.timeLabels[timeIndex] ?? '', timeIndex, this.dataset.timeCount - 1);
       this.onStatsChange?.(this.config.colorRange?.min ?? 0, this.config.colorRange?.max ?? 2, 'm');
     } catch (err) {
-      console.error('[ZarrOverlay] render error:', err);
-      this.onErrorChange?.(String(err));
+      // A stale/superseded request (user scrubbed past this frame while retrying)
+      // isn't a real failure — only report errors for the still-current frame.
+      if (this.mounted && requestId === this.renderRequestId) {
+        console.error('[ZarrOverlay] render error:', err);
+        this.onErrorChange?.(String(err));
+      }
     } finally {
       if (requestId === this.renderRequestId) this.onLoadingChange?.(false);
     }

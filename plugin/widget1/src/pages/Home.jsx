@@ -29,11 +29,23 @@ const widgetContainerStyle = {
   zIndex: 9999,
 };
 
+// SPOT-31153C, SPOT-31071C and the old SPOT-31091C mooring all went dark
+// (last data 2024-05, 2024-09, and never respectively per api.sofarocean.com) —
+// SPOT-30979C is the buoy the SPC Ocean Portal currently shows as Active for
+// Niue, redeployed a few hundred metres from the old SPOT-31091C position.
+//
+// Niue has two live insitu stations per ocean-obs-api.spc.int/insitu/stations/:
+// the Spotter wave buoy above, and the Alofi tide gauge below (station_id
+// "alofi", a completely separate provider/schema — sea-level, not wave data).
 const NIUE_BUOYS = [
-  { id: 'SPOT-31153C', lon: -169.9024667, lat: -18.9747 },
-  { id: 'SPOT-31071C', lon: -169.98535, lat: -19.0662333 },
-  { id: 'SPOT-31091C', lon: -169.9315, lat: -19.05455, highlight: true },
+  { id: 'SPOT-30979C', type: 'wave-buoy', lon: -169.92995, lat: -19.05343, highlight: true },
+  { id: 'alofi', type: 'tide-gauge', label: 'Alofi Tide Gauge', lon: -169.9209, lat: -19.0527 },
 ];
+
+function buoyMarkerColor(buoy) {
+  if (buoy.type === 'tide-gauge') return '#f59e0b';
+  return buoy.highlight ? '#22c55e' : '#0ea5e9';
+}
 
 function Home() {
   const allLayers = useMemo(() => MAP_LAYERS, []);
@@ -54,6 +66,7 @@ function Home() {
   const [bottomCanvasData, setBottomCanvasData] = useState(null);
   const [showBuoyCanvas, setShowBuoyCanvas] = useState(false);
   const [selectedBuoyId, setSelectedBuoyId] = useState(null);
+  const [selectedBuoyType, setSelectedBuoyType] = useState(null);
   const buoyMarkersRef = useRef([]);
 
   // Landing-area advisory: a persistent, user-selected launch point (preset or
@@ -439,20 +452,21 @@ function Home() {
     buoyMarkersRef.current = NIUE_BUOYS.map((buoy) => {
       const el = document.createElement('button');
       el.type = 'button';
-      el.title = buoy.id;
+      el.title = buoy.label ?? buoy.id;
       el.className = 'maplibre-buoy-marker';
       el.style.cssText = [
         'width:22px',
         'height:22px',
         'border-radius:50%',
         'border:3px solid #ffffff',
-        `background:${buoy.highlight ? '#22c55e' : '#0ea5e9'}`,
+        `background:${buoyMarkerColor(buoy)}`,
         'box-shadow:0 2px 8px rgba(0,0,0,0.35)',
         'cursor:pointer',
       ].join(';');
       el.addEventListener('click', (event) => {
         event.stopPropagation();
         setSelectedBuoyId(buoy.id);
+        setSelectedBuoyType(buoy.type);
         setShowBuoyCanvas(true);
       });
 
@@ -597,6 +611,87 @@ function Home() {
         </div>
       )}
 
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 'calc(150px + env(safe-area-inset-bottom, 0px))',
+          left: 20,
+          zIndex: 999,
+          minWidth: 168,
+          background: 'linear-gradient(180deg, rgba(12,74,110,0.97) 0%, rgba(8,54,82,0.97) 100%)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          border: '1px solid rgba(14, 165, 233, 0.28)',
+          borderRadius: 12,
+          padding: '11px 13px',
+          boxShadow: '0 8px 32px rgba(12, 74, 110, 0.4), inset 0 1px 0 rgba(255,255,255,0.06)',
+          color: '#ffffff',
+          fontFamily: "'SF Mono', 'Monaco', 'Consolas', monospace",
+        }}
+      >
+        <div style={{
+          fontSize: 9,
+          fontWeight: 700,
+          letterSpacing: '0.09em',
+          textTransform: 'uppercase',
+          color: '#67e8f9',
+          marginBottom: 8,
+        }}>
+          Ocean Stations &middot; Niue
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {NIUE_BUOYS.map((buoy) => {
+            const color = buoyMarkerColor(buoy);
+            return (
+              <div
+                key={buoy.id}
+                style={{
+                  position: 'relative',
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1,
+                  borderLeft: `3px solid ${color}`,
+                  borderRadius: 6,
+                  padding: '4px 8px',
+                  background: `${color}1f`,
+                }}
+              >
+                <div style={{
+                  position: 'absolute', top: -14, right: -10,
+                  width: 40, height: 40, borderRadius: '50%',
+                  background: `radial-gradient(circle, ${color}33 0%, transparent 70%)`,
+                  pointerEvents: 'none',
+                }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: color,
+                    boxShadow: `0 0 5px ${color}`,
+                    animation: 'pulse-animation 2s infinite',
+                    flexShrink: 0,
+                  }} />
+                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.01em' }}>{buoy.label ?? buoy.id}</span>
+                </div>
+                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.65)', marginLeft: 12 }}>
+                  {buoy.type === 'tide-gauge' ? 'Tide gauge' : buoy.highlight ? 'Buoy + model' : 'Live buoy'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{
+          fontSize: 9,
+          color: 'rgba(255,255,255,0.55)',
+          marginTop: 8,
+          paddingTop: 6,
+          borderTop: '1px solid rgba(255,255,255,0.1)',
+        }}>
+          Click a station for live data
+        </div>
+      </div>
       <BottomOffCanvas
         show={showBottomCanvas}
         onTimeSelect={handleTimeSelect}
@@ -624,6 +719,8 @@ function Home() {
         show={showBuoyCanvas}
         onHide={() => setShowBuoyCanvas(false)}
         buoyId={selectedBuoyId}
+        buoyType={selectedBuoyType}
+        buoyLabel={NIUE_BUOYS.find((b) => b.id === selectedBuoyId)?.label}
       />
     </div>
   );

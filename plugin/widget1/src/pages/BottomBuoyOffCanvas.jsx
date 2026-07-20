@@ -39,7 +39,10 @@ const MODEL_COLORS = [
 
 const MIN_HEIGHT = 100;
 const MAX_HEIGHT_FALLBACK = 800; // used if window size unavailable
- 
+
+const TIDE_COLOR = '#f59e0b';
+const INSITU_API_BASE = 'https://ocean-obs-api.spc.int/insitu';
+
 const MODEL_VARIABLES = ["hs_p1", "tp_p1", "dirp_p1"];
 const LATEST_CAPABILITY_URL = "https://gemthreddshpc.spc.int/thredds/wms/POP/model/country/spc/forecast/hourly/NIU/ForecastNiue_latest.nc?service=WMS&version=1.3.0&request=GetCapabilities";
 const PREVIOUS_CAPABILITY_URL = "https://gemthreddshpc.spc.int/thredds/wms/POP/model/country/spc/forecast/hourly/NIU/ForecastNiue_latest_01.nc?service=WMS&version=1.3.0&request=GetCapabilities";
@@ -111,7 +114,10 @@ async function fetchCapabilities(url) {
 
 async function fetchForecastData(baseUrl, layer, timeRange) {
   const timeParam = `${formatDateISOString(timeRange.start)}/${formatDateISOString(timeRange.end)}`;
-  const url = `${baseUrl}?REQUEST=GetTimeseries&LAYERS=${layer}&QUERY_LAYERS=${layer}&BBOX=-169.9315,-19.05455,-169.9314,-19.05445&SRS=CRS:84&FEATURE_COUNT=5&HEIGHT=1&WIDTH=1&X=0&Y=0&STYLES=default/default&VERSION=1.1.1&TIME=${timeParam}&INFO_FORMAT=text/json`;
+  // Point query at SPOT-30979C's mooring (-169.92995,-19.05343) — the live
+  // Niue buoy per api.sofarocean.com / the SPC Ocean Portal. The old
+  // SPOT-31091C mooring this used to point at has been dark since redeployment.
+  const url = `${baseUrl}?REQUEST=GetTimeseries&LAYERS=${layer}&QUERY_LAYERS=${layer}&BBOX=-169.92995,-19.05343,-169.92985,-19.05333&SRS=CRS:84&FEATURE_COUNT=5&HEIGHT=1&WIDTH=1&X=0&Y=0&STYLES=default/default&VERSION=1.1.1&TIME=${timeParam}&INFO_FORMAT=text/json`;
 
   console.log(`Fetching forecast data from: ${url}`);
 
@@ -275,7 +281,7 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-function BottomBuoyOffCanvas({ show, onHide, buoyId }) {
+function BottomBuoyOffCanvas({ show, onHide, buoyId, buoyType, buoyLabel }) {
   const [height, setHeight] = useState(650);
   const offRef = useRef(null);
   const [activeTab, setActiveTab] = useState("buoy");
@@ -283,6 +289,12 @@ function BottomBuoyOffCanvas({ show, onHide, buoyId }) {
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState("");
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const isTideGauge = buoyType === "tide-gauge";
+
+  // Tide gauge state (station_id-keyed insitu API — sea level, not wave data)
+  const [tideData, setTideData] = useState(null);
+  const [tideLoading, setTideLoading] = useState(false);
+  const [tideError, setTideError] = useState("");
 
   // Check for dark mode
   useEffect(() => {
@@ -414,7 +426,7 @@ function BottomBuoyOffCanvas({ show, onHide, buoyId }) {
 
   // Fetch Sofarocean data when buoyId changes and panel is open
   useEffect(() => {
-    if (!show || !buoyId) return;
+    if (!show || !buoyId || isTideGauge) return;
     setLoading(true);
     setFetchError("");
     setData(null);
@@ -435,11 +447,34 @@ function BottomBuoyOffCanvas({ show, onHide, buoyId }) {
         setLoading(false);
         setHasLoadedData(prev => ({ ...prev, buoy: false }));
       });
-  }, [buoyId, show]);
+  }, [buoyId, show, isTideGauge]);
 
-  // Fetch model data for all variables in parallel
+  // Fetch tide gauge timeseries (sea level, not wave data — separate provider/schema)
   useEffect(() => {
-    if (!show) return;
+    if (!show || !buoyId || !isTideGauge) return;
+    setTideLoading(true);
+    setTideError("");
+    setTideData(null);
+    const url = `${INSITU_API_BASE}/get_data/station/${buoyId}?limit=500`;
+    fetch(url)
+      .then(res => {
+        if (!res.ok) throw new Error("API error");
+        return res.json();
+      })
+      .then(json => {
+        setTideData(Array.isArray(json.data) ? json.data : []);
+        setTideLoading(false);
+      })
+      .catch(() => {
+        setTideError("Failed to fetch tide gauge data");
+        setTideLoading(false);
+      });
+  }, [buoyId, show, isTideGauge]);
+
+  // Fetch model data for all variables in parallel (wave-buoy stations only —
+  // there's no wave model to compare a tide gauge's sea-level reading against)
+  useEffect(() => {
+    if (!show || isTideGauge) return;
     setModelLoading(true);
     setModelError("");
     setModelData(null);
@@ -460,16 +495,18 @@ function BottomBuoyOffCanvas({ show, onHide, buoyId }) {
         setModelLoading(false);
         setHasLoadedData(prev => ({ ...prev, model: false }));
       });
-  }, [show]);
+  }, [show, isTideGauge]);
 
-  // Switch to appropriate tab based on buoy
+  // Switch to appropriate tab based on the selected station
   useEffect(() => {
-    if (buoyId === "SPOT-31091C") {
+    if (isTideGauge) {
+      setActiveTab("tide");
+    } else if (buoyId === "SPOT-30979C") {
       setActiveTab("combination");
     } else {
       setActiveTab("buoy");
     }
-  }, [buoyId]);
+  }, [buoyId, isTideGauge]);
 
   // Common Chart.js options generator
   const createCommonOptions = (title) => ({
@@ -770,9 +807,40 @@ function BottomBuoyOffCanvas({ show, onHide, buoyId }) {
     }
   }
 
+  // Prepare chart data for the tide gauge (single series: sea level)
+  let tideChartData = null;
+  let tideChartOptions = {};
+
+  if (isTideGauge && !tideLoading && !tideError && tideData?.length > 0) {
+    const readings = [...tideData].sort((a, b) => new Date(a.time) - new Date(b.time));
+    tideChartData = {
+      labels: readings.map(r => r.time),
+      datasets: [
+        {
+          label: 'Sea Level (m)',
+          data: readings.map(r => r["sea_level (m)"]),
+          borderColor: TIDE_COLOR,
+          backgroundColor: TIDE_COLOR,
+          yAxisID: 'y',
+          tension: 0.1,
+          pointRadius: 2,
+        },
+      ],
+    };
+    tideChartOptions = createCommonOptions(buoyLabel || `Tide Gauge: ${buoyId}`);
+    // Single series — drop the unused period/direction axes from the shared options.
+    delete tideChartOptions.scales.y1;
+    delete tideChartOptions.scales.y2;
+    tideChartOptions.scales.y.title.text = 'Sea Level (m)';
+  }
+
   let tabLabels = [];
 
-  if (buoyId === "SPOT-31091C") {
+  if (isTideGauge) {
+    tabLabels = [
+      { key: "tide", label: buoyLabel || `Tide Gauge: ${buoyId || ""}` }
+    ];
+  } else if (buoyId === "SPOT-30979C") {
     tabLabels = [
       { key: "combination", label: "Buoy vs Model" },
       { key: "buoy", label: "Wave buoy" }
@@ -904,6 +972,29 @@ function BottomBuoyOffCanvas({ show, onHide, buoyId }) {
       )}
       {activeTab === "buoy" && !loading && !fetchError && data && (!data.waves || data.waves.length === 0) && (
         <div style={{ textAlign: "center", color: "#999" }}>No data available for this buoy.</div>
+      )}
+      {activeTab === "tide" && tideLoading && <div style={{ textAlign: "center", padding: "2rem" }}>Loading tide gauge data...</div>}
+      {activeTab === "tide" && tideError && <div style={{ color: "red", textAlign: "center" }}>{tideError}</div>}
+      {activeTab === "tide" && !tideLoading && !tideError && tideData?.length > 0 && (
+        <div style={{
+          width: "100%",
+          height: "100%",
+          minHeight: '300px',
+          display: 'flex',
+          flexDirection: 'column',
+          backgroundColor: isDarkMode ? '#1e293b' : '#ffffff',
+          padding: '10px',
+          borderRadius: '8px'
+        }}>
+          <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+            <ErrorBoundary>
+              <Line data={tideChartData} options={tideChartOptions} />
+            </ErrorBoundary>
+          </div>
+        </div>
+      )}
+      {activeTab === "tide" && !tideLoading && !tideError && tideData && tideData.length === 0 && (
+        <div style={{ textAlign: "center", color: "#999" }}>No data available for this tide gauge.</div>
       )}
       {activeTab === "model" && modelLoading && (
         <div style={{ textAlign: "center", padding: "2rem" }}>Loading model data...</div>

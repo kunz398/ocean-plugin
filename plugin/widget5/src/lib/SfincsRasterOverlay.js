@@ -1,21 +1,37 @@
 // SfincsRasterOverlay.js
 // MapLibre GL raster overlay for the SFINCS inundation FastAPI.
 //
-// Single-timestep mode: fetches /raster-png as a Blob, creates a blob URL,
-//   and calls ImageSource.updateImage({ url }). MapLibre keeps the previous
-//   frame visible while the new one loads — no blank flash during animation.
+// Single-timestep mode: fetches the raw depth grid from the backend's Zarr
+//   store (via /metadata → zarr_url) and colors it client-side on a <canvas>
+//   (same pipeline as ZarrOverlay), then hands the canvas to MapLibre as a
+//   blob-URL ImageSource. MapLibre keeps the previous frame visible while the
+//   new one loads — no blank flash during animation. Thresholds/min-visible-
+//   depth changes are pure recoloring, no network round-trip.
 //
 // Range-max mode: calls ImageSource.updateImage() with the /range-max/raster-png
-//   URL directly. Old frame stays visible during the (slow) server fetch.
+//   URL directly — the backend doesn't yet expose a raw array for an arbitrary
+//   min/max time window, only pre-rendered PNGs. Old frame stays visible during
+//   the (slow) server fetch.
 //
 // Both modes share a single MapLibre `image` source — no canvas source (removed
 // in MapLibre 5), no separate tile-based source.
+
+import { withRetry } from './withRetry';
+import { renderToCanvas, flipRowsVertically } from './canvasRaster';
+import { fetchConsolidatedMeta, getVarAttrs, getVarMeta, discoverCoord, openZarrArray, applyScaleOffset, LAT_NAMES, LON_NAMES } from './zarrClient';
+import { getColormap } from './colormaps';
 
 const SOURCE_ID = 'sfincs-frame-source';
 const LAYER_ID  = 'sfincs-frame-layer';
 
 // 1×1 transparent GIF — placeholder before the first frame loads.
 const PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+// Fallback continuous colormap when no valid threshold categories are configured
+// (mirrors the backend's turbo-colormap fallback for render_mode=continuous).
+const FALLBACK_COLORMAP = getColormap('jet');
+
+const FRAME_CACHE_LIMIT = 10;
 
 function serializeThresholdParams(categories) {
   if (!Array.isArray(categories) || categories.length < 2) return null;
@@ -34,6 +50,22 @@ function serializeThresholdParams(categories) {
     thresholds: thresholds.join(','),
     colors:     colors.join(','),
   };
+}
+
+// Same categories, shaped for canvasRaster's renderToCanvas ({value, color:[r,g,b]}).
+function thresholdBands(categories) {
+  if (!Array.isArray(categories) || categories.length < 2) return null;
+  const bands = [];
+  for (const cat of categories) {
+    const value = Number(cat?.thresholdM);
+    const hex = String(cat?.color ?? '').replace(/^#/, '');
+    if (!Number.isFinite(value) || !/^[0-9a-fA-F]{6}$/.test(hex)) continue;
+    bands.push({
+      value,
+      color: [parseInt(hex.slice(0, 2), 16), parseInt(hex.slice(2, 4), 16), parseInt(hex.slice(4, 6), 16)],
+    });
+  }
+  return bands.length >= 2 ? bands : null;
 }
 
 export class SfincsRasterOverlay {
@@ -57,6 +89,15 @@ export class SfincsRasterOverlay {
     // bounds: { southWest: [lat, lon], northEast: [lat, lon] }
     this._bounds = config.bounds ?? null;
 
+    // Client-side Zarr rendering state (populated by _loadZarrArray during init)
+    this._variableArr  = null;
+    this._varAttrs     = null;
+    this._variableIs3D = true;
+    this._rows = 0;
+    this._cols = 0;
+    this._latAscending = false;
+    this._frameCache = new Map(); // frameIndex → canvas
+
     this.onTimeChange    = null;
     this.onLoadingChange = null;
     this.onErrorChange   = null;
@@ -70,14 +111,28 @@ export class SfincsRasterOverlay {
   async _initialize() {
     this._setLoading(true);
     try {
-      const resp = await fetch(`${this._apiBase}/timesteps`);
-      if (!resp.ok) throw new Error(`/timesteps returned ${resp.status}`);
-      const payload = await resp.json();
-      const raw = Array.isArray(payload?.timesteps) ? payload.timesteps : [];
+      const [timestepsPayload, metadata] = await Promise.all([
+        fetch(`${this._apiBase}/timesteps`).then((r) => {
+          if (!r.ok) throw new Error(`/timesteps returned ${r.status}`);
+          return r.json();
+        }),
+        fetch(`${this._apiBase}/metadata`).then((r) => {
+          if (!r.ok) throw new Error(`/metadata returned ${r.status}`);
+          return r.json();
+        }),
+      ]);
+
+      const raw = Array.isArray(timestepsPayload?.timesteps) ? timestepsPayload.timesteps : [];
       this._timesteps = raw
         .map((v) => new Date(v))
         .filter((d) => !Number.isNaN(d.getTime()));
 
+      if (this._destroyed) return;
+
+      if (!metadata?.zarr_url || !metadata?.variable) {
+        throw new Error('Inundation /metadata response is missing zarr_url/variable');
+      }
+      await this._loadZarrArray(`${this._apiBase}${metadata.zarr_url}`, metadata.variable);
       if (this._destroyed) return;
 
       // One rAF so any prior deck.gl GL-context finalization settles before we
@@ -94,6 +149,31 @@ export class SfincsRasterOverlay {
     } finally {
       if (!this._destroyed) this._setLoading(false);
     }
+  }
+
+  // Opens the raw depth Zarr array and determines row orientation (the backend
+  // flips vertically when latitude is stored ascending — replicate that here so
+  // row 0 of the canvas is always north, matching the image-source coordinates).
+  async _loadZarrArray(storeUrl, varName) {
+    const consolidated = await fetchConsolidatedMeta(storeUrl);
+
+    const latName = discoverCoord(consolidated, LAT_NAMES);
+    const lonName = discoverCoord(consolidated, LON_NAMES);
+    if (!latName || !lonName) throw new Error('Could not find lat/lon coordinate arrays in inundation Zarr store');
+
+    const varMeta = getVarMeta(consolidated, varName);
+    if (!varMeta) throw new Error(`Variable "${varName}" not found in inundation Zarr store`);
+    const [rows, cols] = varMeta.shape.slice(-2);
+    this._rows = rows;
+    this._cols = cols;
+    this._variableIs3D = varMeta.shape.length === 3;
+
+    this._variableArr = await openZarrArray(storeUrl, varName);
+    this._varAttrs = getVarAttrs(consolidated, varName);
+
+    const latArrRef = await openZarrArray(storeUrl, latName);
+    const latData = await latArrRef.get(null).then((r) => Array.from(r.data, Number));
+    this._latAscending = latData.length > 1 && latData[0] < latData[latData.length - 1];
   }
 
   // ── map source/layer management ───────────────────────────────────────────
@@ -118,7 +198,11 @@ export class SfincsRasterOverlay {
       id: LAYER_ID,
       type: 'raster',
       source: SOURCE_ID,
-      paint: { 'raster-opacity': this._opacity },
+      // The SFINCS grid is ~5m/cell — well below typical zoomed-in screen
+      // resolution — and MapLibre's default 'linear' resampling bilinearly
+      // blurs between threshold-colored bands when overscaled. 'nearest'
+      // keeps threshold-band edges crisp instead of smearing colors together.
+      paint: { 'raster-opacity': this._opacity, 'raster-resampling': 'nearest' },
     });
     this._sourceReady = true;
 
@@ -136,18 +220,7 @@ export class SfincsRasterOverlay {
     this._inRangeMax  = false;
   }
 
-  // ── URL builders ──────────────────────────────────────────────────────────
-
-  _buildFrameImageUrl(timeIndex) {
-    const params = new URLSearchParams({
-      time_index: String(timeIndex),
-      vmin: String(this._vmin),
-      vmax: String(this._vmax),
-    });
-    const tp = serializeThresholdParams(this._categories);
-    if (tp) Object.entries(tp).forEach(([k, v]) => params.set(k, v));
-    return `${this._apiBase}/raster-png?${params}`;
-  }
+  // ── URL builders (range-max mode only — see file header) ──────────────────
 
   _buildRangeMaxImageUrl(rw) {
     const params = new URLSearchParams({
@@ -186,9 +259,46 @@ export class SfincsRasterOverlay {
     }
   }
 
-  // Fetch /raster-png as a blob → blob URL → ImageSource.updateImage()
-  // The image source keeps displaying the previous frame until the new one is ready.
-  _loadFrame(timeIndex) {
+  async _fetchFrameValues(frameIndex) {
+    const selection = this._variableIs3D ? [frameIndex, null, null] : [null, null];
+    // .get() returns a NestedArray for multi-dim results — .data is an array of
+    // arrays, not a flat typed array. .flatten() gives the row-major flat buffer
+    // that renderToCanvas's `values[r * cols + c]` indexing actually needs.
+    const raw = await this._variableArr.get(selection).then((r) => r.flatten());
+    const scaled = applyScaleOffset(raw, this._varAttrs);
+    return this._latAscending ? flipRowsVertically(scaled, this._rows, this._cols) : scaled;
+  }
+
+  _cacheFrame(frameIndex, canvas) {
+    this._frameCache.set(frameIndex, canvas);
+    if (this._frameCache.size > FRAME_CACHE_LIMIT) {
+      const firstKey = this._frameCache.keys().next().value;
+      this._frameCache.delete(firstKey);
+    }
+  }
+
+  _applyCanvasFrame(canvas, coords, frameIndex) {
+    canvas.toBlob((blob) => {
+      if (this._destroyed || !blob) return;
+      const blobUrl = URL.createObjectURL(blob);
+      const source = this._map.getSource(SOURCE_ID);
+      if (source && typeof source.updateImage === 'function') {
+        this._revokeBlobUrl();
+        this._currentBlobUrl = blobUrl;
+        source.updateImage({ url: blobUrl, coordinates: coords });
+        this._loadedFrameIndex = frameIndex;
+      } else {
+        URL.revokeObjectURL(blobUrl);
+      }
+    });
+  }
+
+  // Fetches the raw depth grid for a timestep from the Zarr store, colors it
+  // client-side, then hands the canvas to MapLibre as a blob-URL ImageSource.
+  // The image source keeps displaying the previous frame until the new one is
+  // ready. Transient network failures (a dropped chunk fetch) are retried with
+  // backoff rather than dropping the frame silently.
+  async _loadFrame(timeIndex) {
     const coords = this._imageCoords();
     if (!coords) { this._updateTiles(); return; }
     if (!this._sourceReady || this._inRangeMax || this._destroyed) return;
@@ -203,36 +313,45 @@ export class SfincsRasterOverlay {
       return;
     }
 
-    const url = this._buildFrameImageUrl(frameIndex);
+    const cached = this._frameCache.get(frameIndex);
+    if (cached) {
+      this._applyCanvasFrame(cached, coords, frameIndex);
+      this._loadQueuedFrame();
+      return;
+    }
+
     const token = { cancelled: false, frameIndex };
     this._pendingLoad = token;
 
-    fetch(url, { credentials: 'omit' })
-      .then((r) => {
-        if (!r.ok) throw new Error(`raster-png ${r.status}`);
-        return r.blob();
-      })
-      .then((blob) => {
-        if (token.cancelled || this._destroyed) return;
-        const blobUrl = URL.createObjectURL(blob);
-        const source = this._map.getSource(SOURCE_ID);
-        if (source && typeof source.updateImage === 'function') {
-          this._revokeBlobUrl();
-          this._currentBlobUrl = blobUrl;
-          source.updateImage({ url: blobUrl, coordinates: coords });
-          this._loadedFrameIndex = token.frameIndex;
-        } else {
-          URL.revokeObjectURL(blobUrl);
+    try {
+      const values = await withRetry(
+        () => this._fetchFrameValues(frameIndex),
+        {
+          shouldAbort: () => token.cancelled || this._destroyed,
+          onRetry: (err, attempt, delay) => {
+            console.warn(`[SfincsRasterOverlay] fetch failed for frame ${frameIndex} (attempt ${attempt}), retrying in ${delay}ms`, err);
+          },
         }
-        this._pendingLoad = null;
-        this._loadQueuedFrame();
-      })
-      .catch(() => {
-        if (!this._destroyed && this._pendingLoad === token) {
-          this._pendingLoad = null;
-          this._loadQueuedFrame();
-        }
-      });
+      );
+      if (token.cancelled || this._destroyed) return;
+
+      // Opacity is applied via the layer's raster-opacity paint property (see
+      // setOpacity), not baked into pixel alpha — keeps the frame cache valid
+      // across opacity changes instead of needing a full re-render.
+      const canvas = renderToCanvas(
+        values, this._rows, this._cols, FALLBACK_COLORMAP,
+        this._vmin, this._vmax, /* opacity */ 1, thresholdBands(this._categories), this._vmin
+      );
+      this._cacheFrame(frameIndex, canvas);
+      this._applyCanvasFrame(canvas, coords, frameIndex);
+    } catch (err) {
+      if (!token.cancelled && !this._destroyed) {
+        console.error(`[SfincsRasterOverlay] gave up on frame ${frameIndex} after retries`, err);
+      }
+    } finally {
+      if (this._pendingLoad === token) this._pendingLoad = null;
+      this._loadQueuedFrame();
+    }
   }
 
   _loadQueuedFrame() {
@@ -253,6 +372,8 @@ export class SfincsRasterOverlay {
   }
 
   // ── range-max mode ────────────────────────────────────────────────────────
+  // The backend only exposes pre-rendered PNGs for an arbitrary min/max time
+  // window (no raw-array compositing endpoint yet) — this mode stays server-side.
 
   _applyRangeMax(rw) {
     const coords = this._imageCoords();
@@ -294,8 +415,11 @@ export class SfincsRasterOverlay {
 
   updateConfig({ rangeWindow, inundationCategories, minVisibleDepth } = {}) {
     if (rangeWindow          !== undefined) this._rangeWindow = rangeWindow;
+    const recolor = inundationCategories !== undefined || (minVisibleDepth !== undefined && minVisibleDepth !== null);
     if (inundationCategories !== undefined) this._categories  = inundationCategories;
     if (minVisibleDepth      !== undefined && minVisibleDepth !== null) this._vmin = minVisibleDepth;
+    // Cached canvases were colored with the old thresholds/floor — drop them.
+    if (recolor) this._frameCache.clear();
     if (!this._sourceReady) return;
 
     const isRangeMax = this._rangeWindow && this._rangeWindow.mode !== 'single';
@@ -344,6 +468,7 @@ export class SfincsRasterOverlay {
 
   destroy() {
     this._destroyed = true;
+    this._frameCache.clear();
     this._removeFromMap();
   }
 

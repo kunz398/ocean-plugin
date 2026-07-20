@@ -61,10 +61,6 @@ const ForecastApp = ({
   // eslint-disable-next-line no-unused-vars
   setTerrainEnabled,
   terrainConfig,
-  // eslint-disable-next-line no-unused-vars
-  showOrtho2018 = true,
-  // eslint-disable-next-line no-unused-vars
-  setShowOrtho2018,
   // Unused while the Flood display (2D/3D) toggle is commented out below
   // (moved to advanced-features branch).
   // eslint-disable-next-line no-unused-vars
@@ -627,11 +623,11 @@ const ForecastApp = ({
             ariaLabel={UI_CONFIG.ARIA_LABELS.overlayOpacity}
           />
 
-          {/* Terrain and Aerial imagery toggles — moved to the advanced-features
-              branch, disabled here on main. Restore by uncommenting this block
-              (terrainEnabled/setTerrainEnabled/terrainAvailable and
-              showOrtho2018/setShowOrtho2018 props are still threaded through
-              above, untouched, so re-enabling is just removing this comment).
+          {/* Terrain toggle — moved to the advanced-features branch, disabled
+              here on main. Restore by uncommenting this block
+              (terrainEnabled/setTerrainEnabled/terrainAvailable props are
+              still threaded through above, untouched, so re-enabling is just
+              removing this comment).
 
           <div className="map-display-option">
             <div className="map-display-option__label">Terrain</div>
@@ -663,37 +659,6 @@ const ForecastApp = ({
                   ? '3D terrain shows land relief. Inundation colours still represent modelled flood depth.'
                   : '3D terrain adds topographic shading to the basemap.'
                 : 'Terrain DEM not configured — set REACT_APP_RAROTONGA_DEM_TILES to enable.'}
-            </div>
-          </div>
-
-          <div className="map-display-option">
-            <div className="map-display-option__label">Aerial imagery</div>
-            <div className="map-display-option__segmented" role="radiogroup" aria-label="Aerial imagery source">
-              <button
-                type="button"
-                className={`map-display-option__btn${!showOrtho2018 ? ' map-display-option__btn--active' : ''}`}
-                role="radio"
-                aria-checked={!showOrtho2018}
-                onClick={() => setShowOrtho2018?.(false)}
-                title="Show only the Esri World Imagery basemap"
-              >
-                Basemap only
-              </button>
-              <button
-                type="button"
-                className={`map-display-option__btn${showOrtho2018 ? ' map-display-option__btn--active' : ''}`}
-                role="radio"
-                aria-checked={showOrtho2018}
-                onClick={() => setShowOrtho2018?.(true)}
-                title="Show the 2018 high-resolution aerial survey over Rarotonga"
-              >
-                High-res 2018 survey
-              </button>
-            </div>
-            <div className="map-display-option__hint">
-              {showOrtho2018
-                ? '0.5m/px 2018 aerial survey is shown over Rarotonga; Esri World Imagery covers everywhere else. Terrain still drapes either way.'
-                : 'Showing only the Esri World Imagery basemap. It still drapes over 3D terrain the same as the 2018 survey does.'}
             </div>
           </div>
           */}

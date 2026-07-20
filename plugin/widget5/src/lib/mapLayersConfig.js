@@ -21,9 +21,6 @@ function resolvePublicAssetUrl(rawPath) {
 const _DEM_TILES_RAW = (process.env.REACT_APP_RAROTONGA_DEM_TILES || '').trim();
 const RAROTONGA_DEM_TILES = resolvePublicAssetUrl(_DEM_TILES_RAW);
 
-const _ORTHO_2018_TILES_RAW = (process.env.REACT_APP_RAROTONGA_ORTHO_2018_TILES || '/imagery/rarotonga_2018/{z}/{x}/{y}.png').trim();
-const RAROTONGA_ORTHO_2018_TILES = resolvePublicAssetUrl(_ORTHO_2018_TILES_RAW);
-
 const COOK_ISLANDS_WAVE_BOUNDS = {
   southWest: [-21.9, -163.0],
   northEast: [-8.9,  -156.0],
@@ -63,20 +60,6 @@ export const FLOOD_3D_CONFIG = {
   opacity: 0.8,
   minDepth: 0.05,
   available: true,
-};
-
-// 0.5 m/px aerial survey (31/05/2018), reprojected + tiled from GISDATA/.../Rarotonga/SAT/2018.
-// Shown only over its own footprint at high zoom; Esri World Imagery covers everywhere else
-// and any zoom below minzoom, so this supplements rather than replaces the base imagery.
-export const RAROTONGA_ORTHO_2018_CONFIG = {
-  sourceId: 'rarotonga-ortho-2018',
-  layerId: 'rarotonga-ortho-2018',
-  tiles: [RAROTONGA_ORTHO_2018_TILES],
-  tileSize: 256,
-  minzoom: 13,
-  maxzoom: 18,
-  bounds: [-159.8361562, -21.2803793, -159.7182127, -21.1930325],
-  attribution: process.env.REACT_APP_RAROTONGA_ORTHO_2018_ATTRIBUTION || 'Aerial survey 2018',
 };
 
 const COMMON_SWAN_LAYER = {

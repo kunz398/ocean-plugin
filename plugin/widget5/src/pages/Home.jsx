@@ -33,7 +33,6 @@ function CookIslandsForecast() {
   const [playSpeedMs, setPlaySpeedMs] = useState(700);
   const [rangeWindow, setRangeWindow] = useState({ mode: 'single' });
   const [terrainEnabled, setTerrainEnabled] = useState(false);
-  const [showOrtho2018, setShowOrtho2018] = useState(true);
   const [floodDisplayMode, setFloodDisplayMode] = useState('2d');
   const [flood3dElevScale, setFlood3dElevScale] = useState(FLOOD_3D_CONFIG.elevationScale ?? 6);
 
@@ -88,7 +87,6 @@ function CookIslandsForecast() {
     rangeWindow,
     terrainEnabled,
     terrainConfig: MAP_TERRAIN_CONFIG,
-    showOrtho2018,
     flood3dEnabled: floodDisplayMode === '3d',
     flood3dConfig: FLOOD_3D_CONFIG,
     flood3dElevScale,
@@ -149,8 +147,6 @@ function CookIslandsForecast() {
         terrainEnabled={terrainEnabled}
         setTerrainEnabled={setTerrainEnabled}
         terrainConfig={MAP_TERRAIN_CONFIG}
-        showOrtho2018={showOrtho2018}
-        setShowOrtho2018={setShowOrtho2018}
         floodDisplayMode={floodDisplayMode}
         setFloodDisplayMode={setFloodDisplayMode}
         flood3DConfig={FLOOD_3D_CONFIG}
