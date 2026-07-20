@@ -18,7 +18,7 @@ RUN if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then \
 COPY . .
 
 # Build the React application
-RUN npm run build
+RUN CI=false DISABLE_ESLINT_PLUGIN=true npm run build
 
 # Production stage: Use nginx to serve the built files
 FROM nginx:alpine

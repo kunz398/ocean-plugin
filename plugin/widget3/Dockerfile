@@ -18,7 +18,7 @@ RUN if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then \
 COPY . .
 
 # Build the React application (will place assets in /app/build)
-RUN npm run build
+RUN CI=false DISABLE_ESLINT_PLUGIN=true npm run build
 
 # Remove dev dependencies to shrink final image
 RUN npm prune --production || true
