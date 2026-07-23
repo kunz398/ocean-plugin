@@ -42,6 +42,13 @@ export class SfincsRasterOverlay {
     this._timesteps    = [];
     this._destroyed    = false;
     this._sourceReady  = false;
+    // Cancels this instance's in-flight /timesteps fetch — aborted in
+    // destroy(). Without this, rapid layer switching leaves abandoned
+    // fetches running to completion in the background, which can pile up
+    // enough of them to exhaust the browser's per-origin connection limit
+    // and starve the *current* layer's own fetch with a genuine
+    // "TypeError: Failed to fetch". Mirrors UgridOverlay's _abortController.
+    this._abortController = new AbortController();
 
     // callbacks — assigned by useZarrMap after construction
     this.onTimeChange    = null;
@@ -49,7 +56,21 @@ export class SfincsRasterOverlay {
     this.onErrorChange   = null;
     this.onStatsChange   = null;
 
+    // MapLibre falls back to console.error for any 'error' event with no
+    // registered listener. Every raster tile that fails mid-reload (layer
+    // switch, range-window change, or a tile simply falling out of the
+    // retained set) fires one of these — a single tile failing just means
+    // a blank tile, not an overlay-level failure, so this listener's only
+    // job is to keep that expected noise off the console instead of
+    // alarming the user via onErrorChange.
+    this._handleMapError = this._handleMapError.bind(this);
+    this._map.on('error', this._handleMapError);
+
     this._initialize();
+  }
+
+  _handleMapError(e) {
+    if (e?.sourceId !== SOURCE_ID) return;
   }
 
   // ── init: fetch timesteps then add MapLibre source/layer ─────────────────
@@ -57,7 +78,7 @@ export class SfincsRasterOverlay {
   async _initialize() {
     this._setLoading(true);
     try {
-      const resp = await fetch(`${this._apiBase}/timesteps`);
+      const resp = await fetch(`${this._apiBase}/timesteps`, { signal: this._abortController.signal });
       if (!resp.ok) throw new Error(`/timesteps returned ${resp.status}`);
       const payload = await resp.json();
       const raw = Array.isArray(payload?.timesteps) ? payload.timesteps : [];
@@ -80,7 +101,7 @@ export class SfincsRasterOverlay {
       const maxIdx = Math.max(0, this._timesteps.length - 1);
       this.onTimeChange?.(this._timesteps[0]?.toISOString() ?? '', 0, maxIdx);
     } catch (err) {
-      if (!this._destroyed) this.onErrorChange?.(err.message);
+      if (!this._destroyed && err.name !== 'AbortError') this.onErrorChange?.(err.message);
     } finally {
       if (!this._destroyed) this._setLoading(false);
     }
@@ -210,6 +231,8 @@ export class SfincsRasterOverlay {
 
   destroy() {
     this._destroyed = true;
+    this._abortController.abort();
+    this._map.off('error', this._handleMapError);
     this._removeFromMap();
   }
 

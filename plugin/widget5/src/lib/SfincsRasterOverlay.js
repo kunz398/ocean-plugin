@@ -88,6 +88,16 @@ export class SfincsRasterOverlay {
     this._currentBlobUrl = null; // most recent blob URL (revoked on next update)
     // bounds: { southWest: [lat, lon], northEast: [lat, lon] }
     this._bounds = config.bounds ?? null;
+    // Cancels this instance's in-flight /timesteps, /metadata, and Zarr
+    // metadata/chunk fetches — aborted in destroy(). Without this, rapid
+    // layer switching leaves abandoned fetches running to completion in the
+    // background, which can pile up enough of them to exhaust the browser's
+    // per-origin connection limit and starve the *current* layer's own
+    // fetch with a genuine "TypeError: Failed to fetch". The array is opened
+    // once with this signal baked into its HTTPStore, so every later
+    // per-frame chunk fetch through it is covered too, not just init.
+    // Mirrors UgridOverlay's _abortController.
+    this._abortController = new AbortController();
 
     // Client-side Zarr rendering state (populated by _loadZarrArray during init)
     this._variableArr  = null;
@@ -111,12 +121,13 @@ export class SfincsRasterOverlay {
   async _initialize() {
     this._setLoading(true);
     try {
+      const signal = this._abortController.signal;
       const [timestepsPayload, metadata] = await Promise.all([
-        fetch(`${this._apiBase}/timesteps`).then((r) => {
+        fetch(`${this._apiBase}/timesteps`, { signal }).then((r) => {
           if (!r.ok) throw new Error(`/timesteps returned ${r.status}`);
           return r.json();
         }),
-        fetch(`${this._apiBase}/metadata`).then((r) => {
+        fetch(`${this._apiBase}/metadata`, { signal }).then((r) => {
           if (!r.ok) throw new Error(`/metadata returned ${r.status}`);
           return r.json();
         }),
@@ -145,7 +156,7 @@ export class SfincsRasterOverlay {
       const maxIdx = Math.max(0, this._timesteps.length - 1);
       this.onTimeChange?.(this._timesteps[0]?.toISOString() ?? '', 0, maxIdx);
     } catch (err) {
-      if (!this._destroyed) this.onErrorChange?.(err.message);
+      if (!this._destroyed && err.name !== 'AbortError') this.onErrorChange?.(err.message);
     } finally {
       if (!this._destroyed) this._setLoading(false);
     }
@@ -155,7 +166,8 @@ export class SfincsRasterOverlay {
   // flips vertically when latitude is stored ascending — replicate that here so
   // row 0 of the canvas is always north, matching the image-source coordinates).
   async _loadZarrArray(storeUrl, varName) {
-    const consolidated = await fetchConsolidatedMeta(storeUrl);
+    const signal = this._abortController.signal;
+    const consolidated = await fetchConsolidatedMeta(storeUrl, signal);
 
     const latName = discoverCoord(consolidated, LAT_NAMES);
     const lonName = discoverCoord(consolidated, LON_NAMES);
@@ -168,10 +180,10 @@ export class SfincsRasterOverlay {
     this._cols = cols;
     this._variableIs3D = varMeta.shape.length === 3;
 
-    this._variableArr = await openZarrArray(storeUrl, varName);
+    this._variableArr = await openZarrArray(storeUrl, varName, signal);
     this._varAttrs = getVarAttrs(consolidated, varName);
 
-    const latArrRef = await openZarrArray(storeUrl, latName);
+    const latArrRef = await openZarrArray(storeUrl, latName, signal);
     const latData = await latArrRef.get(null).then((r) => Array.from(r.data, Number));
     this._latAscending = latData.length > 1 && latData[0] < latData[latData.length - 1];
   }
@@ -468,6 +480,7 @@ export class SfincsRasterOverlay {
 
   destroy() {
     this._destroyed = true;
+    this._abortController.abort();
     this._frameCache.clear();
     this._removeFromMap();
   }

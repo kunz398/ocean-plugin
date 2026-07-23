@@ -38,6 +38,14 @@ export class ZarrOverlay {
     this.cachedFrames = new Map(); // timeIndex → {canvas, values}
     this._sliderTimer = null;
     this.didAutoFit = false;
+    // Cancels every zarr metadata/chunk fetch this instance has in flight —
+    // aborted in destroy(). Without this, switching layers left abandoned
+    // fetches running to completion in the background; rapid switching could
+    // pile up enough of them to exhaust the browser's per-origin connection
+    // limit, starving the *current* layer's own fetch and surfacing as a
+    // genuine "TypeError: Failed to fetch" even though nothing was really
+    // broken. Mirrors UgridOverlay's _abortController.
+    this._abortController = new AbortController();
 
     // UI callbacks — assign before initialize fires
     this.onTimeChange   = null;
@@ -56,18 +64,24 @@ export class ZarrOverlay {
       console.log('[ZarrOverlay] metadata loaded, dataset:', this.dataset);
       await this._renderFrame(this.timeIndex);
     } catch (err) {
-      console.error('[ZarrOverlay] init error:', err);
-      this.onErrorChange?.(String(err));
+      // AbortError means destroy() cancelled this instance's own in-flight
+      // fetches (see _abortController) — expected on a fast layer switch,
+      // not a real failure, so it must never reach onErrorChange.
+      if (this.mounted && err.name !== 'AbortError') {
+        console.error('[ZarrOverlay] init error:', err);
+        this.onErrorChange?.(String(err));
+      }
     } finally {
-      this.onLoadingChange?.(false);
+      if (this.mounted) this.onLoadingChange?.(false);
     }
   }
 
   async _loadMetadata() {
     if (this.dataset) return;
     const storeUrl = buildZarrUrl(this.config.datasetName, this.config.zarrBaseUrl);
+    const signal = this._abortController.signal;
 
-    const consolidated = await fetchConsolidatedMeta(storeUrl);
+    const consolidated = await fetchConsolidatedMeta(storeUrl, signal);
 
     const latName = discoverCoord(consolidated, LAT_NAMES);
     const lonName = discoverCoord(consolidated, LON_NAMES);
@@ -79,9 +93,9 @@ export class ZarrOverlay {
     const varMeta = getVarMeta(consolidated, varName);
     if (!varMeta) throw new Error(`Variable "${varName}" not found in Zarr store`);
 
-    this.variableArr = await openZarrArray(storeUrl, varName);
-    const latArrRef = await openZarrArray(storeUrl, latName);
-    const lonArrRef = await openZarrArray(storeUrl, lonName);
+    this.variableArr = await openZarrArray(storeUrl, varName, signal);
+    const latArrRef = await openZarrArray(storeUrl, latName, signal);
+    const lonArrRef = await openZarrArray(storeUrl, lonName, signal);
 
     const [latData, lonData] = await Promise.all([
       latArrRef.get(null).then(r => Array.from(r.data, Number)),
@@ -91,7 +105,7 @@ export class ZarrOverlay {
     let timeCount = 1;
     let timeLabels = ['Timestep 1'];
     if (timeName) {
-      const timeArrRef = await openZarrArray(storeUrl, timeName);
+      const timeArrRef = await openZarrArray(storeUrl, timeName, signal);
       const timeData = await timeArrRef.get(null).then(r => Array.from(r.data, Number));
       const timeAttrs = getVarAttrs(consolidated, timeName);
       const units = timeAttrs?.units ?? '';
@@ -267,6 +281,7 @@ export class ZarrOverlay {
 
   destroy() {
     this.mounted = false;
+    this._abortController.abort();
     this.stopPlayback();
     if (this._sliderTimer) { clearTimeout(this._sliderTimer); this._sliderTimer = null; }
     this.overlay.setProps({ layers: [] });

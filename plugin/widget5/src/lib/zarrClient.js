@@ -8,8 +8,8 @@ export const LAT_NAMES = ['lat', 'latitude', 'y', 'nav_lat'];
 export const LON_NAMES = ['lon', 'longitude', 'x', 'nav_lon'];
 export const TIME_NAMES = ['time', 'timemax', 'Time'];
 
-export async function fetchConsolidatedMeta(storeUrl) {
-  const resp = await fetch(`${storeUrl}/.zmetadata`);
+export async function fetchConsolidatedMeta(storeUrl, signal) {
+  const resp = await fetch(`${storeUrl}/.zmetadata`, { signal });
   if (!resp.ok) throw new Error(`.zmetadata not found at ${storeUrl}`);
   return resp.json();
 }
@@ -30,14 +30,14 @@ export function discoverCoord(consolidated, variants) {
   return null;
 }
 
-export async function openZarrArray(storeUrl, varPath) {
-  const store = new HTTPStore(storeUrl, { fetchOptions: { credentials: 'omit' } });
+export async function openZarrArray(storeUrl, varPath, signal) {
+  const store = new HTTPStore(storeUrl, { fetchOptions: { credentials: 'omit', signal } });
   // zarr.js sends HEAD requests for containsItem() checks; the zarr-api only supports GET.
   // Override containsItem to use GET instead of HEAD to avoid 405 errors.
   store.containsItem = async (key) => {
     try {
       const url = `${storeUrl}/${key}`;
-      const resp = await fetch(url, { method: 'GET', credentials: 'omit' });
+      const resp = await fetch(url, { method: 'GET', credentials: 'omit', signal });
       return resp.status === 200;
     } catch { return false; }
   };
