@@ -11,6 +11,7 @@ import {
   Title,
   Tooltip
 } from 'chart.js';
+import { formatZoned } from '../../utils/timeZoneFormat';
 
 Chart.register(
   CategoryScale,
@@ -24,19 +25,13 @@ Chart.register(
   Tooltip
 );
 
-const formatTickLabel = (value) => {
+const formatTickLabel = (value, timeZone) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return value;
   }
 
-  return date.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  });
+  return formatZoned(date, timeZone, { withLabel: false, year: undefined, month: 'short', day: 'numeric' });
 };
 
 const buildAnnotationPlugin = ({ thresholds, nowIndexRef, selectedIndexRef, isDarkMode }) => ({
@@ -130,7 +125,8 @@ function WaterLevelChart({
   now = new Date(),
   selectedIndex = null,
   isDarkMode = false,
-  onTimeSelect
+  onTimeSelect,
+  timeZone = 'Pacific/Rarotonga',
 }) {
   const canvasRef = useRef(null);
   const chartInstanceRef = useRef(null);
@@ -143,7 +139,7 @@ function WaterLevelChart({
       return null;
     }
 
-    const labels = timestamps.map(formatTickLabel);
+    const labels = timestamps.map((value) => formatTickLabel(value, timeZone));
     const oceanWaterLevel = timestamps.map((timestamp, index) => ({
       timestamp,
       value: (Number(tideLevel[index]) || 0) + (Number(surgeLevel[index]) || 0)
@@ -166,7 +162,7 @@ function WaterLevelChart({
       oceanWaterLevel,
       astronomicalTide
     };
-  }, [timestamps, totalWaterLevel, tideLevel, surgeLevel]);
+  }, [timestamps, totalWaterLevel, tideLevel, surgeLevel, timeZone]);
 
   const nowIndex = useMemo(() => {
     if (!chartData) return -1;

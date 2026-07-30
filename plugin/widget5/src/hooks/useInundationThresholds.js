@@ -76,6 +76,7 @@ export default function useInundationThresholds() {
   const persistProfiles = useCallback((nextProfiles, nextActiveProfileId) => {
     const persisted = saveProfilesToStorage(nextProfiles, nextActiveProfileId);
     if (!persisted) {
+      console.error('[useInundationThresholds] Browser storage is unavailable — changes will not persist after reload.');
       setSaveError('Browser storage is unavailable — changes will not persist after reload.');
       return false;
     }

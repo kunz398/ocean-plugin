@@ -7,6 +7,7 @@ import Tabular from "./tabular.js";
 import Timeseries from "./timeseries.js";
 import RiskDetailsPanel from "../components/risk/RiskDetailsPanel";
 import InundationTimeseries from "./InundationTimeseries";
+import { formatZoned } from "../utils/timeZoneFormat";
 
 
 // ---- Variables & config for Cook Islands (adapted from Widget 1) ----
@@ -167,7 +168,7 @@ function PanelSpinner({ isDarkMode, message, slowMessage }) {
   );
 }
 
-function BottomOffCanvas({ show, onHide, data, currentSliderDate, onTimeSelect, onRiskThresholdsSaved }) {
+function BottomOffCanvas({ show, onHide, data, currentSliderDate, timeDisplayZone = 'Pacific/Rarotonga', onTimeSelect, onRiskThresholdsSaved }) {
   const offcanvasRef = useRef(null);
   const isRiskMode = data?.mode === "risk";
   const isInundationMode = data?.mode === "inundation";
@@ -311,6 +312,7 @@ function BottomOffCanvas({ show, onHide, data, currentSliderDate, onTimeSelect, 
       return () => { isMounted = false; };
     }
     if (data?.error) {
+      console.error('[BottomOffCanvas] timeseries error:', data.error);
       setPerVariableData({});
       setFetchError(data.error);
       setLoading(false);
@@ -481,9 +483,9 @@ function BottomOffCanvas({ show, onHide, data, currentSliderDate, onTimeSelect, 
                   padding: "2px 7px",
                   whiteSpace: "nowrap",
                 }}>
-                  {new Date(data.rangeWindow.startTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                  {formatZoned(new Date(data.rangeWindow.startTime), timeDisplayZone, { withLabel: false, year: undefined, month: 'short' })}
                   {' – '}
-                  {new Date(data.rangeWindow.endTime).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+                  {formatZoned(new Date(data.rangeWindow.endTime), timeDisplayZone, { withLabel: false, year: undefined, month: 'short' })}
                 </span>
               ) : data?.lat != null && (
                 <span style={{
@@ -613,7 +615,7 @@ function BottomOffCanvas({ show, onHide, data, currentSliderDate, onTimeSelect, 
         aria-labelledby={(!isRiskMode && !isInundationMode) ? `tab-btn-${activeTab}` : undefined}
       >
         {isRiskMode ? (
-          <RiskDetailsPanel data={data} isDarkMode={isDarkMode} currentSliderDate={currentSliderDate} onTimeSelect={onTimeSelect} onThresholdsSaved={onRiskThresholdsSaved} />
+          <RiskDetailsPanel data={data} isDarkMode={isDarkMode} currentSliderDate={currentSliderDate} onTimeSelect={onTimeSelect} onThresholdsSaved={onRiskThresholdsSaved} timeDisplayZone={timeDisplayZone} />
         ) : isInundationMode ? (
           data?.loading
             ? <PanelSpinner isDarkMode={isDarkMode} message="Loading depth timeseries…" />
@@ -671,12 +673,13 @@ function BottomOffCanvas({ show, onHide, data, currentSliderDate, onTimeSelect, 
                 </div>
               )
               : <>
-                  {activeTab === "tabular" && <Tabular perVariableData={perVariableData} />}
+                  {activeTab === "tabular" && <Tabular perVariableData={perVariableData} timeDisplayZone={timeDisplayZone} />}
                   {activeTab === "timeseries" && (
                     <Timeseries
                       perVariableData={perVariableData}
                       currentSliderDate={currentSliderDate}
                       onTimeSelect={onTimeSelect}
+                      timeDisplayZone={timeDisplayZone}
                     />
                   )}
                 </>

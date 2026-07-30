@@ -379,7 +379,16 @@ export const DEPARTURE_PROBE_OFFSETS_HOURS = [3, 6, 12, 24];
 // do this (fixed worker pool, no early exit), so this is its own sequential
 // loop, paced with the same SCENARIO_RUN_DELAY_MS rate-limit discipline.
 // One candidate failing doesn't abort the rest of the probe.
-export async function findBetterDeparture(apiBase, { routePoints, vessel, departureTime, speedKt }, { onProgress } = {}) {
+//
+// maxDepartureTime (optional Date) is the forecast's last available
+// timestamp. Offsets that would land past it are dropped *before* probing —
+// firing them would just fail (or, worse, silently succeed against
+// stale/extrapolated backend data) instead of telling the user anything
+// useful. Always returns an object (never bare null) so callers can build an
+// honest message even when nothing was found: `found` says whether a
+// candidate is being recommended; checkedOffsets/failedOffsets/skippedOffsets
+// together account for every offset in DEPARTURE_PROBE_OFFSETS_HOURS.
+export async function findBetterDeparture(apiBase, { routePoints, vessel, departureTime, speedKt, maxDepartureTime } = {}, { onProgress } = {}) {
   // Same bare-datetime-local issue as validateRouteForecastInput/
   // toComparableMs — departureTime here is the live routeDepartureTime
   // state, undesignated but UTC-intended. Every probed offset was silently
@@ -389,16 +398,24 @@ export async function findBetterDeparture(apiBase, { routePoints, vessel, depart
     throw new Error('Choose a valid departure time before checking alternatives.');
   }
 
+  const maxMs = maxDepartureTime instanceof Date && !Number.isNaN(maxDepartureTime.getTime())
+    ? maxDepartureTime.getTime()
+    : null;
+  const probeOffsets = DEPARTURE_PROBE_OFFSETS_HOURS.filter(
+    (h) => maxMs === null || baseMs + h * 3_600_000 <= maxMs
+  );
+  const skippedOffsets = DEPARTURE_PROBE_OFFSETS_HOURS.filter((h) => !probeOffsets.includes(h));
+
   let best = null;
   // Callers describe the result as "best of the offsets checked" — that was
   // never actually true when a probe failed outright (network error, etc.)
   // rather than just scoring worse; failedOffsets lets the UI/PDF say so
   // instead of silently implying every offset was evaluated.
   const failedOffsets = [];
-  for (let i = 0; i < DEPARTURE_PROBE_OFFSETS_HOURS.length; i++) {
-    const offsetHours = DEPARTURE_PROBE_OFFSETS_HOURS[i];
+  for (let i = 0; i < probeOffsets.length; i++) {
+    const offsetHours = probeOffsets[i];
     const candidateTime = new Date(baseMs + offsetHours * 3_600_000).toISOString();
-    onProgress?.({ offsetHours, index: i, total: DEPARTURE_PROBE_OFFSETS_HOURS.length });
+    onProgress?.({ offsetHours, index: i, total: probeOffsets.length });
 
     let result = null;
     try {
@@ -411,16 +428,21 @@ export async function findBetterDeparture(apiBase, { routePoints, vessel, depart
     if (result) {
       const worst = result.summary?.worst_hazard_class;
       if (worst === 0) {
-        return { offsetHours, departureTime: candidateTime, worstHazardClass: 0, allClear: true, result, isEstimate: false, failedOffsets };
+        return {
+          found: true, offsetHours, departureTime: candidateTime, worstHazardClass: 0, allClear: true, result, isEstimate: false,
+          checkedOffsets: probeOffsets, failedOffsets, skippedOffsets,
+        };
       }
       if (worst !== null && worst !== undefined && (best === null || worst < best.worstHazardClass)) {
         best = { offsetHours, departureTime: candidateTime, worstHazardClass: worst, allClear: false, result, isEstimate: false };
       }
     }
 
-    if (i < DEPARTURE_PROBE_OFFSETS_HOURS.length - 1) await sleep(SCENARIO_RUN_DELAY_MS);
+    if (i < probeOffsets.length - 1) await sleep(SCENARIO_RUN_DELAY_MS);
   }
-  return best ? { ...best, failedOffsets } : null;
+  return best
+    ? { found: true, ...best, checkedOffsets: probeOffsets, failedOffsets, skippedOffsets }
+    : { found: false, checkedOffsets: probeOffsets, failedOffsets, skippedOffsets };
 }
 
 export function buildRouteAdvisoryBriefConfig({

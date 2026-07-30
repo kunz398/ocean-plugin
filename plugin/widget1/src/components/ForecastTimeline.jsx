@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Pause, Pin, PinOff, Play } from 'lucide-react';
+import { formatZoned } from '../utils/timeZoneFormat';
 import './ForecastTimeline.css';
 
 const SPEED_OPTIONS = [
@@ -10,17 +11,7 @@ const SPEED_OPTIONS = [
 
 function formatThumbLabel(date, tz) {
   if (!date) return '—';
-  const tzLabel = tz === 'UTC' ? 'UTC' : 'NUT';
-  const formatted = new Intl.DateTimeFormat('en-GB', {
-    timeZone: tz,
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date);
-  return `${formatted} ${tzLabel}`;
+  return formatZoned(date, tz);
 }
 
 export default function ForecastTimeline({
@@ -106,7 +97,7 @@ export default function ForecastTimeline({
     <div className={`ft-root${inline ? ' ft-root--inline' : ''}`} aria-label="Forecast timeline">
       {capTime?.runTimeSource === 'unavailable' && capTime?.forecastStart && (
         <div className="ft-stale-chip" role="status">
-          Forecast window starts {capTime.forecastStart.toISOString().replace('T', ' ').slice(0, 16)} UTC.
+          Forecast window starts {formatZoned(capTime.forecastStart, timeDisplayZone)}.
         </div>
       )}
 
@@ -233,8 +224,8 @@ export default function ForecastTimeline({
           </button>
         </div>
 
-        {/* Sidebar pin toggle — only shown on the bottom bar, not the inline copy */}
-        {!inline && onTogglePanel && (
+        {/* Sidebar pin toggle */}
+        {onTogglePanel && (
           <button
             type="button"
             className={`ft-btn ft-pin-btn${showInPanel ? ' ft-pin-btn--active' : ''}`}

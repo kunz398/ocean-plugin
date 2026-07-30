@@ -65,12 +65,10 @@ function ScenarioComparisonPanel({
   }, [highlightScenarioId]);
 
   const [exportingBrief, setExportingBrief] = useState(false);
-  const [exportError, setExportError] = useState('');
 
   const handleExportComparisonBrief = useCallback(async () => {
     if (exportingBrief) return;
     setExportingBrief(true);
-    setExportError('');
     try {
       const readyScenarios = entries.filter((e) => e.scenario.status === 'ready').map((e) => e.scenario);
       await exportSuitabilityPDF({
@@ -81,7 +79,7 @@ function ScenarioComparisonPanel({
         }),
       });
     } catch (err) {
-      setExportError(err.message || 'Scenario comparison brief failed.');
+      console.error('[ScenarioComparisonPanel] Comparison brief export failed:', err);
     } finally {
       setExportingBrief(false);
     }
@@ -205,7 +203,6 @@ function ScenarioComparisonPanel({
             <FileDown size={13} style={{ marginRight: 6, verticalAlign: 'text-bottom' }} />
             {exportingBrief ? 'Generating…' : 'Generate Scenario Comparison Brief'}
           </button>
-          {exportError && <div className="map-display-option__hint" style={{ color: '#f87171' }}>{exportError}</div>}
         </>
       )}
     </div>

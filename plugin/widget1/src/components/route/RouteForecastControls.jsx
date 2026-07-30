@@ -1,5 +1,7 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Play, RotateCcw, Route, Trash2, Undo2, Upload } from 'lucide-react';
+import { fromZonedInputValue, toZonedInputValue, tzLabel } from '../../utils/timeZoneFormat';
+import { parseAsUtcWallClock } from '../../services/routeForecastService';
 
 // Mirrors routeForecastService.js's 404 message — retrying can't fix "this
 // backend doesn't have the endpoint yet."
@@ -15,6 +17,9 @@ function RouteForecastControls({
   setRouteDepartureTime,
   routeForecastLoading,
   routeForecastError,
+  maxDepartureTime,
+  minDepartureTime,
+  timeDisplayZone = 'Pacific/Niue',
   onRunRouteForecast,
   onClearRoute,
   onUndoRoutePoint,
@@ -22,6 +27,53 @@ function RouteForecastControls({
 }) {
   const fileInputRef = useRef(null);
   const pointCount = routePoints?.length ?? 0;
+
+  // routeDepartureTime is always stored as a UTC-wall-clock string (no zone
+  // designator, e.g. Home.jsx's currentSliderDate.toISOString().slice(0, 16))
+  // — the same convention routeForecastService.js's parseAsUtcWallClock and
+  // scenarioService.js rely on. These *Local values are that same canonical
+  // format, used only for the clamp comparisons below; what the picker
+  // actually *displays* is a separate zone-converted value further down, so
+  // switching the NUT/UTC toggle never changes what gets sent to the backend.
+  const maxDepartureLocal = maxDepartureTime instanceof Date && !Number.isNaN(maxDepartureTime.getTime())
+    ? maxDepartureTime.toISOString().slice(0, 16)
+    : undefined;
+  const minDepartureLocal = minDepartureTime instanceof Date && !Number.isNaN(minDepartureTime.getTime())
+    ? minDepartureTime.toISOString().slice(0, 16)
+    : undefined;
+
+  // Zone-aware display: the native datetime-local input can't take a
+  // timezone parameter, so we convert the canonical UTC value/min/max into
+  // wall-clock strings for whichever zone is currently selected, and convert
+  // the user's edit straight back to UTC on change.
+  const departureLocalDisplay = toZonedInputValue(parseAsUtcWallClock(routeDepartureTime), timeDisplayZone) ?? '';
+  const maxDepartureDisplay = toZonedInputValue(maxDepartureTime, timeDisplayZone);
+  const minDepartureDisplay = toZonedInputValue(minDepartureTime, timeDisplayZone);
+
+  const handleDepartureChange = (value) => {
+    const utcDate = fromZonedInputValue(value, timeDisplayZone);
+    setRouteDepartureTime?.(utcDate ? utcDate.toISOString().slice(0, 16) : value);
+  };
+
+  // Belt-and-braces clamp: the input's min/max attributes stop new
+  // out-of-range picks, but don't retroactively fix a value set before the
+  // forecast window was known (e.g. right after a layer switch shifts it),
+  // and not every browser enforces datetime-local's min/max the same way.
+  useEffect(() => {
+    if (!routeDepartureTime) return;
+    if (maxDepartureLocal && routeDepartureTime > maxDepartureLocal) {
+      console.warn(
+        `[RouteForecastControls] Departure time ${routeDepartureTime} is beyond the forecast end (${maxDepartureLocal}) — clamping.`
+      );
+      setRouteDepartureTime?.(maxDepartureLocal);
+    } else if (minDepartureLocal && routeDepartureTime < minDepartureLocal) {
+      console.warn(
+        `[RouteForecastControls] Departure time ${routeDepartureTime} is before the forecast start (${minDepartureLocal}) — clamping.`
+      );
+      setRouteDepartureTime?.(minDepartureLocal);
+    }
+  }, [routeDepartureTime, maxDepartureLocal, minDepartureLocal, setRouteDepartureTime]);
+
   const canRun = pointCount >= 2 && !routeForecastLoading;
 
   const handleFileChange = (event) => {
@@ -80,12 +132,14 @@ function RouteForecastControls({
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.65fr', gap: '0.45rem', marginTop: '0.5rem' }}>
         <label className="map-display-option__hint" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          Departure
+          {`Departure (${tzLabel(timeDisplayZone)})`}
           <input
             className="map-display-option__btn"
             type="datetime-local"
-            value={routeDepartureTime || ''}
-            onChange={(e) => setRouteDepartureTime?.(e.target.value)}
+            value={departureLocalDisplay}
+            min={minDepartureDisplay}
+            max={maxDepartureDisplay}
+            onChange={(e) => handleDepartureChange(e.target.value)}
             style={{ width: '100%', textAlign: 'left' }}
           />
         </label>
@@ -141,8 +195,7 @@ function RouteForecastControls({
       </div>
 
       {routeForecastError && (
-        <div className="map-display-option__hint" style={{ color: '#fca5a5', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
-          <span>{routeForecastError}</span>
+        <div className="map-display-option__hint" style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
           {retryable && (
             <button
               type="button"

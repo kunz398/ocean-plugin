@@ -101,7 +101,7 @@ const tabLabels = [
 ];
 
 function BottomOffCanvas({
-  show, onHide, data, currentSliderDate, onTimeSelect, landingAreaTimeseries, seaLevelTimeseries, onRunRouteForecast,
+  show, onHide, data, currentSliderDate, timeDisplayZone, onTimeSelect, landingAreaTimeseries, seaLevelTimeseries, onRunRouteForecast,
   suitabilityApiBase, currentTimeIndex,
   currentRouteInputs, currentModelRunStart,
   scenarioCount, onConfirmVesselSuggestion,
@@ -185,6 +185,7 @@ function BottomOffCanvas({
 
     if (!data || !data.bbox || (data.x === undefined && data.i === undefined) || (data.y === undefined && data.j === undefined)) {
       setPerVariableData({});
+      if (data?.error) console.error('[BottomOffCanvas] timeseries error:', data.error);
       setFetchError(data?.error || "No data available");
       return;
     }
@@ -213,10 +214,20 @@ function BottomOffCanvas({
 
       setPerVariableData(out);
       setLoading(false);
-      if (Object.values(out).every(x => !x)) setFetchError("No data returned from server.");
+      if (Object.values(out).every(x => !x)) {
+        console.error('[BottomOffCanvas] all variable timeseries requests failed for', data);
+        setFetchError("No data returned from server.");
+      }
     })();
     return () => { isMounted = false; };
   }, [data, isRiskMode, isSuitabilityMode, isInundationMode, isLandingAreaMode, isRouteForecastMode]);
+
+  // Inundation-mode timeseries errors are dev/ops signal, not something to
+  // alarm the end user with — log to console instead of the red banner this
+  // used to render.
+  useEffect(() => {
+    if (data?.error) console.error('[BottomOffCanvas] inundation timeseries error:', data.error);
+  }, [data?.error]);
 
   return (
     <Offcanvas
@@ -337,12 +348,13 @@ function BottomOffCanvas({
         position: 'relative'
       }}>
         {isRiskMode
-          ? <RiskDetailsPanel data={data} isDarkMode={isDarkMode} currentSliderDate={currentSliderDate} onTimeSelect={onTimeSelect} />
+          ? <RiskDetailsPanel data={data} isDarkMode={isDarkMode} currentSliderDate={currentSliderDate} onTimeSelect={onTimeSelect} timeDisplayZone={timeDisplayZone} />
           : isSuitabilityMode
-          ? <SuitabilityDetailsPanel data={data} />
+          ? <SuitabilityDetailsPanel data={data} timeDisplayZone={timeDisplayZone} />
           : isLandingAreaMode
           ? (
             <LandingAreaDetailsPanel
+              timeDisplayZone={timeDisplayZone}
               landingArea={{
                 ...(data?.landingArea ?? {}),
                 statistics_basis: landingAreaTimeseries?.data?.statistics_basis,
@@ -368,6 +380,7 @@ function BottomOffCanvas({
           ? (
             <RouteForecastPanel
               data={data}
+              timeDisplayZone={timeDisplayZone}
               onRetry={onRunRouteForecast}
               canRetry={(data?.routePoints?.length ?? 0) >= 2 && !data?.loading}
               currentRouteInputs={currentRouteInputs}
@@ -407,16 +420,7 @@ function BottomOffCanvas({
                 </div>
               )
               : data?.error
-                ? (
-                  <div style={{
-                    textAlign: "center",
-                    padding: "2rem",
-                    color: "#f87171",
-                    fontSize: 13,
-                  }}>
-                    Failed to load timeseries: {data.error}
-                  </div>
-                )
+                ? null
                 : <InundationTimeseries
                     timeseries={data?.timeseries}
                     categories={data?.categories}
@@ -429,10 +433,10 @@ function BottomOffCanvas({
           : loading
           ? <div style={{ textAlign: "center", padding: "2rem" }}>Loading data...</div>
           : fetchError
-              ? <div style={{ color: "red", textAlign: "center" }}>{fetchError}</div>
+              ? null
               : <>
-                  {activeTab === "tabular" && <Tabular perVariableData={perVariableData} />}
-                  {activeTab === "timeseries" && <Timeseries perVariableData={perVariableData} />}
+                  {activeTab === "tabular" && <Tabular perVariableData={perVariableData} timeDisplayZone={timeDisplayZone} />}
+                  {activeTab === "timeseries" && <Timeseries perVariableData={perVariableData} timeDisplayZone={timeDisplayZone} />}
 
                 </>
         }

@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatZoned } from '../utils/timeZoneFormat';
 
 function getForecastStatus(capTime) {
   if (capTime?.loading) {
@@ -18,13 +19,13 @@ function getForecastStatus(capTime) {
   return { label: 'Forecast data', color: '#10b981', pulse: true, forecastStart: capTime.forecastStart };
 }
 
-function formatForecastStart(dateLike) {
+function formatForecastStart(dateLike, timeZone) {
   const date = new Date(dateLike);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+  return formatZoned(date, timeZone);
 }
 
-const ModernHeader = ({ capTime }) => {
+const ModernHeader = ({ capTime, timeDisplayZone = 'Pacific/Niue' }) => {
   const status = getForecastStatus(capTime);
 
   return (
@@ -91,7 +92,7 @@ const ModernHeader = ({ capTime }) => {
             not a certified model-run/init timestamp, so avoid displaying a
             fabricated "model run age" here. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }} title={
-          status.forecastStart ? `First forecast valid time: ${formatForecastStart(status.forecastStart)}` : undefined
+          status.forecastStart ? `First forecast valid time: ${formatForecastStart(status.forecastStart, timeDisplayZone)}` : undefined
         }>
           <div style={{
             width: '8px',
@@ -110,7 +111,7 @@ const ModernHeader = ({ capTime }) => {
               color: 'rgba(255,255,255,0.85)',
               marginLeft: '10px'
             }}>
-              from {formatForecastStart(status.forecastStart)}
+              from {formatForecastStart(status.forecastStart, timeDisplayZone)}
             </span>
           )}
         </div>

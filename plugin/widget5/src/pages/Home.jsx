@@ -32,6 +32,11 @@ function CookIslandsForecast() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playSpeedMs, setPlaySpeedMs] = useState(700);
   const [rangeWindow, setRangeWindow] = useState({ mode: 'single' });
+  // App-wide display zone for every date/time readout (CKT = Pacific/Rarotonga,
+  // fixed UTC-10 year-round, or UTC) — lifted here (rather than living inside
+  // ForecastApp, which owned it before) so ModernHeader and the BottomOffCanvas
+  // panels can respect the same toggle as the timeline.
+  const [timeDisplayZone, setTimeDisplayZone] = useState('Pacific/Rarotonga');
   const [terrainEnabled, setTerrainEnabled] = useState(false);
   const [floodDisplayMode, setFloodDisplayMode] = useState('2d');
   const [flood3dElevScale, setFlood3dElevScale] = useState(FLOOD_3D_CONFIG.elevationScale ?? 6);
@@ -94,6 +99,12 @@ function CookIslandsForecast() {
 
   const totalSteps = Math.max(1, timeCount) - 1;
 
+  // Layer errors are dev/ops signal, not something to alarm the end user with —
+  // log to console instead of the "Layer error" banner this used to render.
+  useEffect(() => {
+    if (overlayError) console.error('[Home] Layer error:', overlayError);
+  }, [overlayError]);
+
   const handleHideBottomCanvas = useCallback(() => {
     setShowBottomCanvas(false);
     removePinMarker();
@@ -113,7 +124,7 @@ function CookIslandsForecast() {
 
   return (
     <div style={widgetContainerStyle}>
-      <ModernHeader />
+      <ModernHeader timeDisplayZone={timeDisplayZone} />
       <ForecastApp
         WAVE_FORECAST_LAYERS={ALL_LAYERS}
         ALL_LAYERS={ALL_LAYERS}
@@ -152,18 +163,9 @@ function CookIslandsForecast() {
         flood3DConfig={FLOOD_3D_CONFIG}
         flood3dElevScale={flood3dElevScale}
         setFlood3dElevScale={setFlood3dElevScale}
+        timeDisplayZone={timeDisplayZone}
+        setTimeDisplayZone={setTimeDisplayZone}
       />
-
-      {overlayError && (
-        <div style={{
-          position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
-          background: 'rgba(220,53,69,0.92)', color: '#fff', padding: '8px 16px',
-          borderRadius: 8, fontSize: 13, zIndex: 10010, maxWidth: 420, textAlign: 'center',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-        }}>
-          Layer error: {overlayError}
-        </div>
-      )}
 
       <BottomOffCanvas
         show={showBottomCanvas}
@@ -171,6 +173,7 @@ function CookIslandsForecast() {
         onHide={handleHideBottomCanvas}
         data={bottomCanvasData}
         currentSliderDate={currentSliderDate}
+        timeDisplayZone={timeDisplayZone}
         onRiskThresholdsSaved={refreshRiskMarkerColors}
       />
       <BottomBuoyOffCanvas

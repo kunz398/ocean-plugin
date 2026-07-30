@@ -10,6 +10,7 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
+import { toZonedInputValue } from '../utils/timeZoneFormat';
 
 ChartJS.register(
   CategoryScale,
@@ -48,14 +49,20 @@ function extractCoverageTimeseries(json, variable) {
   return { times, values };
 }
 
-function Timeseries({ perVariableData }) {
+function formatChartLabel(v, timeZone) {
+  const date = new Date(v);
+  if (!Number.isNaN(date.getTime())) {
+    return toZonedInputValue(date, timeZone).replace('T', ' ');
+  }
+  return typeof v === "string" && v.length > 15 ? v.substring(0, 16).replace("T", " ") : v;
+}
+
+function Timeseries({ perVariableData, timeDisplayZone = 'Pacific/Niue' }) {
   const [chartData, setChartData] = useState(null);
-  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!perVariableData) {
       setChartData(null);
-      setError("No timeseries data available.");
       return;
     }
 
@@ -81,9 +88,7 @@ function Timeseries({ perVariableData }) {
 
         if (ts && Array.isArray(ts.times) && ts.times.length > 0 && Array.isArray(ts.values)) {
           if (labels.length === 0) {
-            labels = ts.times.map(v =>
-              typeof v === "string" && v.length > 15 ? v.substring(0, 16).replace("T", " ") : v
-            );
+            labels = ts.times.map(v => formatChartLabel(v, timeDisplayZone));
           }
           datasets.push({
             label: label,
@@ -100,20 +105,18 @@ function Timeseries({ perVariableData }) {
       }
 
       if (datasets.length === 0) {
-        setError("No timeseries data returned.");
+        console.error('[timeseries] No timeseries data returned for', perVariableData);
         setChartData(null);
       } else {
-        setError("");
         setChartData({ labels, datasets });
       }
     } catch (e) {
-      setError(e?.message || "Failed to process timeseries data.");
+      console.error('[timeseries] Failed to process timeseries data:', e);
       setChartData(null);
     }
-  }, [perVariableData]);
+  }, [perVariableData, timeDisplayZone]);
 
   if (!perVariableData) return <div>No data available.</div>;
-  if (error) return <div style={{ color: "red" }}>{error}</div>;
   if (!chartData) return <div>No timeseries data.</div>;
 
   const options = {

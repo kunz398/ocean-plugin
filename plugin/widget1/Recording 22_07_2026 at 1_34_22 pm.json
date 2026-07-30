@@ -1,0 +1,493 @@
+{
+    "title": "Recording 22/07/2026 at 1:34:22 pm",
+    "steps": [
+        {
+            "type": "setViewport",
+            "width": 1419,
+            "height": 948,
+            "deviceScaleFactor": 1,
+            "isMobile": false,
+            "hasTouch": false,
+            "isLandscape": false
+        },
+        {
+            "type": "navigate",
+            "url": "http://localhost:3001/",
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "http://localhost:3001/",
+                    "title": "Niue Forecast"
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Mean Period forecast variable"
+                ],
+                [
+                    "div.controls-panel button:nth-of-type(2)"
+                ],
+                [
+                    "xpath///*[@id=\"root\"]/div/div/div/div/div[2]/div/div[1]/div/button[2]"
+                ],
+                [
+                    "pierce/div.controls-panel button:nth-of-type(2)"
+                ],
+                [
+                    "text/Mean Period"
+                ]
+            ],
+            "offsetY": 19.96875,
+            "offsetX": 73.8125
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Wave Period forecast variable"
+                ],
+                [
+                    "div.controls-panel button:nth-of-type(3)"
+                ],
+                [
+                    "xpath///*[@id=\"root\"]/div/div/div/div/div[2]/div/div[1]/div/button[3]"
+                ],
+                [
+                    "pierce/div.controls-panel button:nth-of-type(3)"
+                ]
+            ],
+            "offsetY": 19.796875,
+            "offsetX": 87.40625
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Inundation forecast variable"
+                ],
+                [
+                    "div.controls-panel button:nth-of-type(4)"
+                ],
+                [
+                    "xpath///*[@id=\"root\"]/div/div/div/div/div[2]/div/div[1]/div/button[4]"
+                ],
+                [
+                    "pierce/div.controls-panel button:nth-of-type(4)"
+                ]
+            ],
+            "offsetY": 42.796875,
+            "offsetX": 79.8125
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Vessel Suitability forecast variable"
+                ],
+                [
+                    "div.controls-panel button:nth-of-type(5)"
+                ],
+                [
+                    "xpath///*[@id=\"root\"]/div/div/div/div/div[2]/div/div[1]/div/button[5]"
+                ],
+                [
+                    "pierce/div.controls-panel button:nth-of-type(5)"
+                ],
+                [
+                    "text/Vessel Suitability"
+                ]
+            ],
+            "offsetY": 40.62158203125,
+            "offsetX": 142.40625
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Very Small Motorised Craft"
+                ],
+                [
+                    "div.suitability-control-card--vessel button:nth-of-type(2)"
+                ],
+                [
+                    "xpath///*[@id=\"root\"]/div/div/div/div/div[2]/div/div[3]/div[2]/div[2]/button[2]"
+                ],
+                [
+                    "pierce/div.suitability-control-card--vessel button:nth-of-type(2)"
+                ]
+            ],
+            "offsetY": 0.9375,
+            "offsetX": 37.3125
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Dismiss"
+                ],
+                [
+                    "button"
+                ],
+                [
+                    "xpath///*[@id=\"webpack-dev-server-client-overlay-div\"]/button"
+                ],
+                [
+                    "pierce/button"
+                ],
+                [
+                    "text/×"
+                ]
+            ],
+            "offsetY": 16,
+            "offsetX": 19.015625,
+            "frame": [
+                0
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Small Craft",
+                    "aria/[role=\"generic\"]"
+                ],
+                [
+                    "div.suitability-control-card--vessel button:nth-of-type(3) > span"
+                ],
+                [
+                    "xpath///*[@id=\"root\"]/div/div/div/div/div[2]/div/div[3]/div[2]/div[2]/button[3]/span"
+                ],
+                [
+                    "pierce/div.suitability-control-card--vessel button:nth-of-type(3) > span"
+                ],
+                [
+                    "text/Small Craft"
+                ]
+            ],
+            "offsetY": 11.546875,
+            "offsetX": 52.65625
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Dismiss"
+                ],
+                [
+                    "button"
+                ],
+                [
+                    "xpath///*[@id=\"webpack-dev-server-client-overlay-div\"]/button"
+                ],
+                [
+                    "pierce/button"
+                ],
+                [
+                    "text/×"
+                ]
+            ],
+            "offsetY": 15,
+            "offsetX": 21.015625,
+            "frame": [
+                0
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Larger Vessels",
+                    "aria/[role=\"generic\"]"
+                ],
+                [
+                    "div.suitability-control-card--vessel button:nth-of-type(4) > span"
+                ],
+                [
+                    "xpath///*[@id=\"root\"]/div/div/div/div/div[2]/div/div[3]/div[2]/div[2]/button[4]/span"
+                ],
+                [
+                    "pierce/div.suitability-control-card--vessel button:nth-of-type(4) > span"
+                ],
+                [
+                    "text/Larger Vessels"
+                ]
+            ],
+            "offsetY": 1.546875,
+            "offsetX": 26.671875
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Dismiss"
+                ],
+                [
+                    "button"
+                ],
+                [
+                    "xpath///*[@id=\"webpack-dev-server-client-overlay-div\"]/button"
+                ],
+                [
+                    "pierce/button"
+                ],
+                [
+                    "text/×"
+                ]
+            ],
+            "offsetY": 12,
+            "offsetX": 10.015625,
+            "frame": [
+                0
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Traditional Craft",
+                    "aria/[role=\"generic\"]"
+                ],
+                [
+                    "div.suitability-control-card--vessel button:nth-of-type(1) > span"
+                ],
+                [
+                    "xpath///*[@id=\"root\"]/div/div/div/div/div[2]/div/div[3]/div[2]/div[2]/button[1]/span"
+                ],
+                [
+                    "pierce/div.suitability-control-card--vessel button:nth-of-type(1) > span"
+                ],
+                [
+                    "text/Traditional Craft"
+                ]
+            ],
+            "offsetY": 19.9375,
+            "offsetX": 103.734375
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Dismiss"
+                ],
+                [
+                    "button"
+                ],
+                [
+                    "xpath///*[@id=\"webpack-dev-server-client-overlay-div\"]/button"
+                ],
+                [
+                    "pierce/button"
+                ],
+                [
+                    "text/×"
+                ]
+            ],
+            "offsetY": 20,
+            "offsetX": 25.015625,
+            "frame": [
+                0
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Small Craft",
+                    "aria/[role=\"generic\"]"
+                ],
+                [
+                    "div.suitability-control-card--vessel button:nth-of-type(3) > span"
+                ],
+                [
+                    "xpath///*[@id=\"root\"]/div/div/div/div/div[2]/div/div[3]/div[2]/div[2]/button[3]/span"
+                ],
+                [
+                    "pierce/div.suitability-control-card--vessel button:nth-of-type(3) > span"
+                ],
+                [
+                    "text/Small Craft"
+                ]
+            ],
+            "offsetY": 10.546875,
+            "offsetX": 76.65625
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Dismiss"
+                ],
+                [
+                    "button"
+                ],
+                [
+                    "xpath///*[@id=\"webpack-dev-server-client-overlay-div\"]/button"
+                ],
+                [
+                    "pierce/button"
+                ],
+                [
+                    "text/×"
+                ]
+            ],
+            "offsetY": 24,
+            "offsetX": 24.015625,
+            "frame": [
+                0
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Larger Vessels",
+                    "aria/[role=\"generic\"]"
+                ],
+                [
+                    "div.suitability-control-card--vessel button:nth-of-type(4) > span"
+                ],
+                [
+                    "xpath///*[@id=\"root\"]/div/div/div/div/div[2]/div/div[3]/div[2]/div[2]/button[4]/span"
+                ],
+                [
+                    "pierce/div.suitability-control-card--vessel button:nth-of-type(4) > span"
+                ],
+                [
+                    "text/Larger Vessels"
+                ]
+            ],
+            "offsetY": 6.546875,
+            "offsetX": 58.671875
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Dismiss"
+                ],
+                [
+                    "button"
+                ],
+                [
+                    "xpath///*[@id=\"webpack-dev-server-client-overlay-div\"]/button"
+                ],
+                [
+                    "pierce/button"
+                ],
+                [
+                    "text/×"
+                ]
+            ],
+            "offsetY": 16,
+            "offsetX": 28.015625,
+            "frame": [
+                0
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Significant Wave Height forecast variable"
+                ],
+                [
+                    "div.controls-panel > div > div:nth-of-type(1) button:nth-of-type(1)"
+                ],
+                [
+                    "xpath///*[@id=\"root\"]/div/div/div/div/div[2]/div/div[1]/div/button[1]"
+                ],
+                [
+                    "pierce/div.controls-panel > div > div:nth-of-type(1) button:nth-of-type(1)"
+                ],
+                [
+                    "text/Significant Wave"
+                ]
+            ],
+            "offsetY": 44.96875,
+            "offsetX": 72.40625
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Mean Period forecast variable"
+                ],
+                [
+                    "div.controls-panel button:nth-of-type(2)"
+                ],
+                [
+                    "xpath///*[@id=\"root\"]/div/div/div/div/div[2]/div/div[1]/div/button[2]"
+                ],
+                [
+                    "pierce/div.controls-panel button:nth-of-type(2)"
+                ],
+                [
+                    "text/Mean Period"
+                ]
+            ],
+            "offsetY": 26.96875,
+            "offsetX": 32.8125
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Wave Period forecast variable"
+                ],
+                [
+                    "div.controls-panel button:nth-of-type(3)"
+                ],
+                [
+                    "xpath///*[@id=\"root\"]/div/div/div/div/div[2]/div/div[1]/div/button[3]"
+                ],
+                [
+                    "pierce/div.controls-panel button:nth-of-type(3)"
+                ]
+            ],
+            "offsetY": 27.796875,
+            "offsetX": 64.40625
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Inundation forecast variable"
+                ],
+                [
+                    "div.controls-panel button:nth-of-type(4)"
+                ],
+                [
+                    "xpath///*[@id=\"root\"]/div/div/div/div/div[2]/div/div[1]/div/button[4]"
+                ],
+                [
+                    "pierce/div.controls-panel button:nth-of-type(4)"
+                ]
+            ],
+            "offsetY": 30.796875,
+            "offsetX": 40.8125
+        }
+    ]
+}

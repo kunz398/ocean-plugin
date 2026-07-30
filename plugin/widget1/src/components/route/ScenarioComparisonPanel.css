@@ -115,12 +115,13 @@
 }
 
 .scenario-compare-table-wrap {
-  overflow-x: auto;
+  overflow-x: hidden;
   margin-top: 0.6rem;
 }
 
 .scenario-compare-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.7rem;
 }
@@ -129,17 +130,40 @@
 .scenario-compare-table td {
   padding: 0.3rem 0.4rem;
   text-align: left;
-  white-space: nowrap;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .scenario-compare-table th {
   color: rgba(180, 200, 230, 0.68);
   font-weight: 700;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.15;
 }
 
 .scenario-compare-table td {
   color: rgba(224, 247, 255, 0.92);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scenario-compare-table th:nth-child(1) { width: 24%; }
+.scenario-compare-table th:nth-child(2) { width: 14%; }
+.scenario-compare-table th:nth-child(3) { width: 20%; }
+.scenario-compare-table th:nth-child(4) { width: 16%; }
+.scenario-compare-table th:nth-child(5) { width: 13%; }
+.scenario-compare-table th:nth-child(6) { width: 13%; }
+
+@media (max-width: 600px) {
+  .scenario-compare-table {
+    font-size: 0.64rem;
+  }
+
+  .scenario-compare-table th,
+  .scenario-compare-table td {
+    padding: 0.28rem 0.2rem;
+  }
 }
 
 /* Row background wash, not text color — recommended-row text used to be

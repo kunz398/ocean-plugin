@@ -208,8 +208,8 @@ export default function ForecastTimeline({
           </button>
         </div>
 
-        {/* Sidebar pin toggle — only shown on the bottom bar, not the inline copy */}
-        {!inline && onTogglePanel && (
+        {/* Sidebar pin toggle */}
+        {onTogglePanel && (
           <button
             type="button"
             className={`ft-btn ft-pin-btn${showInPanel ? ' ft-pin-btn--active' : ''}`}

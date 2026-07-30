@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import Plot from 'react-plotly.js';
+import { formatZoned, tzLabel } from "../utils/timeZoneFormat";
 
 const TRACE_CONFIG = [
   { key: "hs",    label: "Wave Height", color: 'rgb(56,189,248)',  unit: 'm', yaxis: 'y',  mode: 'lines+markers' },
@@ -52,7 +53,7 @@ function StatBadge({ label, value, unit, color, isDarkMode }) {
   );
 }
 
-function Timeseries({ perVariableData, currentSliderDate, onTimeSelect }) {
+function Timeseries({ perVariableData, currentSliderDate, onTimeSelect, timeDisplayZone = 'Pacific/Rarotonga' }) {
   const [plotData, setPlotData] = useState([]);
   const [error, setError] = useState("");
   const [parentHeight, setParentHeight] = useState(undefined);
@@ -102,6 +103,7 @@ function Timeseries({ perVariableData, currentSliderDate, onTimeSelect }) {
     }
 
     setPlotData(traces);
+    if (traces.length === 0) console.error('[timeseries] No timeseries data returned for', perVariableData);
     setError(traces.length === 0 ? "No timeseries data returned." : "");
   }, [perVariableData]);
 
@@ -129,10 +131,7 @@ function Timeseries({ perVariableData, currentSliderDate, onTimeSelect }) {
     if (!nowTime || !plotData.length) return {};
     const lineColor = isDarkMode ? 'rgba(255,255,255,0.30)' : 'rgba(15,23,42,0.22)';
     const accentColor = isDarkMode ? '#60a5fa' : '#3b82f6';
-    const label = nowTime.toLocaleString('en', {
-      month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
-    });
+    const label = formatZoned(nowTime, timeDisplayZone, { withLabel: false, year: undefined, month: 'short', day: 'numeric' });
     return {
       nowShape: {
         type: 'line', xref: 'x', yref: 'paper',
@@ -141,7 +140,7 @@ function Timeseries({ perVariableData, currentSliderDate, onTimeSelect }) {
       },
       nowAnnotation: {
         x: nowTime, y: 1, xref: 'x', yref: 'paper',
-        text: `<b>${label} UTC</b>`,
+        text: `<b>${label} ${tzLabel(timeDisplayZone)}</b>`,
         showarrow: true, arrowhead: 0,
         arrowcolor: accentColor,
         ax: 0, ay: -24,
@@ -150,7 +149,7 @@ function Timeseries({ perVariableData, currentSliderDate, onTimeSelect }) {
         borderpad: 3, bordercolor: accentColor, borderwidth: 1,
       },
     };
-  }, [nowTime, plotData, isDarkMode]);
+  }, [nowTime, plotData, isDarkMode, timeDisplayZone]);
 
   // Plotly div + click handler refs — imperative attachment survives layout updates
   const plotlyDivRef = useRef(null);
@@ -175,8 +174,7 @@ function Timeseries({ perVariableData, currentSliderDate, onTimeSelect }) {
   }, []);
 
   if (!perVariableData) return <div>No data available.</div>;
-  if (error) return <div style={{ color: "red" }}>{error}</div>;
-  if (plotData.length === 0) return <div>No timeseries data.</div>;
+  if (error || plotData.length === 0) return <div>No timeseries data.</div>;
 
   const grid = isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
   const tick = { color: isDarkMode ? '#475569' : '#94a3b8', size: 10, family: 'Inter, system-ui, sans-serif' };

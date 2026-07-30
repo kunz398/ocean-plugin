@@ -11,6 +11,7 @@ import {
   suggestBetterVessel,
 } from '../../services/scenarioService';
 import { exportSuitabilityPDF } from '../../utils/SuitabilityPDFExporter';
+import { formatZoned, tzLabel } from '../../utils/timeZoneFormat';
 import './RouteForecastPanel.css';
 
 // The endpoint-not-deployed message from routeForecastService.js — retrying
@@ -24,20 +25,21 @@ function fmtNumber(value, digits = 1, suffix = '') {
   return Number.isFinite(value) ? `${value.toFixed(digits)}${suffix}` : '-';
 }
 
-function fmtTime(value) {
-  if (!value) return '-';
-  const d = new Date(value);
-  if (!Number.isFinite(d.getTime())) return '-';
-  return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
 function RouteForecastPanel({
   data, onRetry, canRetry, currentRouteInputs, currentModelRunStart,
   scenarioCount = 0, onConfirmVesselSuggestion,
   departureSuggestionLoading, departureSuggestionProgress, departureSuggestionResult, departureSuggestionError,
   onSuggestBetterDeparture, onApplyDepartureSuggestion, onSaveDepartureSuggestionAsScenario,
   seaLevelTimeseries, apiBase, currentTimeIndex,
+  timeDisplayZone = 'Pacific/Niue',
 }) {
+  function fmtTime(value, withLabel = true) {
+    if (!value) return '-';
+    const d = new Date(value);
+    if (!Number.isFinite(d.getTime())) return '-';
+    return formatZoned(d, timeDisplayZone, { withLabel, year: undefined, month: 'short', day: 'numeric' });
+  }
+
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const [confirmingVessel, setConfirmingVessel] = useState(false);
@@ -128,6 +130,7 @@ function RouteForecastPanel({
         }),
       });
     } catch (err) {
+      console.error('[RouteForecastPanel] Advisory brief export failed:', err);
       setExportError(err.message || 'Route advisory brief failed.');
     } finally {
       setExporting(false);
@@ -378,7 +381,7 @@ function RouteForecastPanel({
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ color: TEXT_MUTED, textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
-              <th style={thStyle}>ETA</th>
+              <th style={thStyle}>{`ETA (${tzLabel(timeDisplayZone)})`}</th>
               <th style={thStyle}>Distance</th>
               <th style={thStyle}>Hazard</th>
               <th style={thStyle}>Wave</th>
@@ -392,7 +395,7 @@ function RouteForecastPanel({
               const tideM = seaLevelHeightM(sampleTides[index]);
               return (
               <tr key={sample.sample_index} style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                <td style={tdStyle}>{fmtTime(sample.eta)}</td>
+                <td style={tdStyle}>{fmtTime(sample.eta, false)}</td>
                 <td style={tdStyle}>{fmtNumber(sample.distance_nm, 1, ' nm')}</td>
                 <td style={{ ...tdStyle, color: SUITABILITY_HAZARD_COLORS[sample.hazard_class] ?? '#e2e8f0', fontWeight: 700 }}>
                   {sample.hazard_label}

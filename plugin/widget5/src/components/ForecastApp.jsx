@@ -72,13 +72,14 @@ const ForecastApp = ({
   flood3dElevScale = 6,
   // eslint-disable-next-line no-unused-vars
   setFlood3dElevScale,
+  timeDisplayZone,
+  setTimeDisplayZone,
 }) => {
   const lastZoomedLayerRef = useRef(null);
   const [selectedIslandId, setSelectedIslandId] = useState(ISLAND_ZOOM_TARGETS[0]?.id || '');
   const [showThresholdEditor, setShowThresholdEditor] = useState(false);
   const [showTimelineInPanel, setShowTimelineInPanel] = useState(false);
   const [contoursEnabled, setContoursEnabled] = useState(false);
-  const [timeDisplayZone, setTimeDisplayZone] = useState('Pacific/Rarotonga');
   const selectedLayer = useMemo(() => {
     return ALL_LAYERS.find(l => l.value === selectedWaveForecast) || null;
   }, [ALL_LAYERS, selectedWaveForecast]);
@@ -466,26 +467,28 @@ const ForecastApp = ({
             </div>
           )}
 
-          {/* Bottom timeline overlay — always visible, drives all forecast layers */}
-          <ForecastTimeline
-            sliderIndex={sliderIndex}
-            totalSteps={totalSteps}
-            minIndex={minIndex}
-            currentSliderDate={currentSliderDate}
-            capTime={capTime}
-            isPlaying={isPlaying}
-            playSpeedMs={playSpeedMs}
-            timeDisplayZone={timeDisplayZone}
-            disabled={selectedLayer?.isStatic || (isRasterInundation && rangeWindow?.mode && rangeWindow.mode !== 'single')}
-            onTimeIndexChange={handleSliderChange}
-            onPlayPause={handlePlayToggle}
-            onPrevious={handlePreviousTimestamp}
-            onNext={handleNextTimestamp}
-            onSpeedChange={setPlaySpeedMs}
-            onTimezoneChange={setTimeDisplayZone}
-            showInPanel={showTimelineInPanel}
-            onTogglePanel={() => setShowTimelineInPanel(v => !v)}
-          />
+          {/* Bottom timeline overlay — hidden while pinned to the side panel */}
+          {!showTimelineInPanel && (
+            <ForecastTimeline
+              sliderIndex={sliderIndex}
+              totalSteps={totalSteps}
+              minIndex={minIndex}
+              currentSliderDate={currentSliderDate}
+              capTime={capTime}
+              isPlaying={isPlaying}
+              playSpeedMs={playSpeedMs}
+              timeDisplayZone={timeDisplayZone}
+              disabled={selectedLayer?.isStatic || (isRasterInundation && rangeWindow?.mode && rangeWindow.mode !== 'single')}
+              onTimeIndexChange={handleSliderChange}
+              onPlayPause={handlePlayToggle}
+              onPrevious={handlePreviousTimestamp}
+              onNext={handleNextTimestamp}
+              onSpeedChange={setPlaySpeedMs}
+              onTimezoneChange={setTimeDisplayZone}
+              showInPanel={showTimelineInPanel}
+              onTogglePanel={() => setShowTimelineInPanel(v => !v)}
+            />
+          )}
         </div>
 
         <div className="controls-panel">
@@ -548,6 +551,8 @@ const ForecastApp = ({
             onNext={handleNextTimestamp}
             onSpeedChange={setPlaySpeedMs}
             onTimezoneChange={setTimeDisplayZone}
+            showInPanel={showTimelineInPanel}
+            onTogglePanel={() => setShowTimelineInPanel(v => !v)}
           />
         )}
 
@@ -607,6 +612,7 @@ const ForecastApp = ({
               availableTimestamps={capTime?.availableTimestamps}
               disabled={capTime?.loading}
               currentTime={currentSliderDate}
+              timeDisplayZone={timeDisplayZone}
             />
           </ControlGroup>
         )}
@@ -765,6 +771,7 @@ const ForecastApp = ({
         validationErrors={inundationThresholds.validationErrors}
         isDirty={inundationThresholds.isDirty}
         savedAt={inundationThresholds.savedAt}
+        timeDisplayZone={timeDisplayZone}
         saveError={inundationThresholds.saveError}
         canUndo={inundationThresholds.canUndo}
         canRedo={inundationThresholds.canRedo}

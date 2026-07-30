@@ -1,6 +1,7 @@
 import React from 'react';
 import { CircleCheck, TriangleAlert, OctagonAlert, Ship, Timer, Wind, Waves, MapPin } from 'lucide-react';
 import { VESSEL_CLASSES, SUITABILITY_HAZARD_COLORS, SUITABILITY_HAZARD_LABELS } from '../../lib/NiueSuitabilityOverlay';
+import { formatZoned } from '../../utils/timeZoneFormat';
 
 const HAZARD_ICONS = {
   0: CircleCheck,
@@ -15,9 +16,8 @@ const TEXT_MUTED = 'rgba(203, 213, 225, 0.65)';
 // API's /niue/suitability/point endpoint, which returns one hazard reading
 // at the current time index (no batch timeseries endpoint exists yet, unlike
 // the Cook Islands inundation API).
-function SuitabilityDetailsPanel({ data }) {
+function SuitabilityDetailsPanel({ data, timeDisplayZone = 'Pacific/Niue' }) {
   const loading = data?.loading;
-  const error = data?.error;
   const result = data?.result;
 
   // This panel always renders on the bottom offcanvas's fixed dark-navy
@@ -32,9 +32,6 @@ function SuitabilityDetailsPanel({ data }) {
 
   if (loading) {
     return <div style={{ ...wrapperStyle, textAlign: 'center' }}>Loading suitability…</div>;
-  }
-  if (error) {
-    return <div style={{ ...wrapperStyle, color: '#f87171', textAlign: 'center' }}>{error}</div>;
   }
   if (!result) {
     return <div style={{ ...wrapperStyle, textAlign: 'center', color: TEXT_MUTED }}>No suitability data at this location.</div>;
@@ -51,7 +48,7 @@ function SuitabilityDetailsPanel({ data }) {
 
   const stats = [
     { icon: Ship, label: 'Vessel class', value: vesselLabel },
-    { icon: Timer, label: 'Valid time', value: result.valid_time ? new Date(result.valid_time).toLocaleString() : '—' },
+    { icon: Timer, label: 'Valid time', value: result.valid_time ? formatZoned(new Date(result.valid_time), timeDisplayZone) : '—' },
     { icon: Wind, label: 'Wind speed', value: Number.isFinite(result.wind_speed_kt) ? `${result.wind_speed_kt.toFixed(1)} kt` : '—' },
     { icon: Waves, label: 'Significant Wave height', value: Number.isFinite(result.wave_height_m) ? `${result.wave_height_m.toFixed(2)} m` : '—' },
   ];

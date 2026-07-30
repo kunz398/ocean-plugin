@@ -129,6 +129,14 @@ export function useZarrMap({
   const mapInstance = useRef(null);
 
   const overlayRef = useRef(null);
+  // Shared across every UgridOverlay instance this hook ever creates (unlike
+  // the overlay's own `didAutoFit`, which is a per-instance flag that starts
+  // false again on every layer switch — hs -> tm02 -> tpeak each got its own
+  // fresh instance, so the camera snapped to the mesh bounds on *every*
+  // switch, not just the first load). Wrapped in an object rather than a bare
+  // boolean so UgridOverlay can flip it via a stable reference regardless of
+  // which instance currently holds it.
+  const autoFitStateRef = useRef({ done: false });
   const particleOverlayRef = useRef(null);
   const arcOverlayRef = useRef(null);
   const playIntervalRef = useRef(null);
@@ -339,7 +347,7 @@ export function useZarrMap({
     setLoading(false);
 
     const ov = layerCfg.type === 'ugrid'
-      ? new UgridOverlay(map, { ...layerCfg, opacity })
+      ? new UgridOverlay(map, { ...layerCfg, opacity, autoFitState: autoFitStateRef.current })
       : layerCfg.sourceType === 'sfincs-raster'
       ? new SfincsRasterOverlay(map, {
           ...layerCfg,
@@ -379,7 +387,16 @@ export function useZarrMap({
     overlayRef.current = ov;
 
     setSliderIndex(0);
-    setTimeCount(1);
+    // Don't reset timeCount to 1 here (same reasoning as leaving timeLabels alone
+    // below): the playback interval's stop condition is `nextIndex >= timeCount`,
+    // and metadata loads are routinely slower than playSpeedMs (Wasabi has no
+    // Cache-Control, and _loadMetadata is several sequential/parallel requests).
+    // A transient timeCount of 1 made that check fire on the interval's very
+    // first tick after almost every layer switch made mid-playback, silently
+    // stopping animation before the new overlay's real timeCount ever arrived.
+    // Keep the previous layer's timeCount as a harmless upper bound until the
+    // new overlay's onTimeChange (line ~365) replaces it with the real value.
+    //
     // Don't clear timeLabels here — keep previous layer's labels so currentSliderDate
     // is never null during the metadata load window. They'll be replaced as soon as
     // the new overlay fires onTimeChange and the [timeCount] effect runs.
@@ -654,6 +671,7 @@ export function useZarrMap({
         cbRef.current.setShowBottomCanvas(true);
       })
       .catch((err) => {
+        console.error('[useZarrMap] Risk point details fetch failed:', err);
         cbRef.current.setBottomCanvasData({ mode: 'risk', point, status: 'error', error: err.message });
         cbRef.current.setShowBottomCanvas(true);
       });
@@ -703,6 +721,7 @@ export function useZarrMap({
           setCB({ mode: 'suitability', lat, lng, result });
         })
         .catch((err) => {
+          console.error('[useZarrMap] Suitability point query failed:', err);
           setCB({ mode: 'suitability', lat, lng, error: err.message });
         });
       return;
@@ -765,6 +784,7 @@ export function useZarrMap({
         });
       })
       .catch((err) => {
+        console.error('[useZarrMap] Point timeseries fetch failed:', err);
         setCB(isInundationLayer
           ? { mode: 'inundation', lat, lng, timeseries: null, rangeWindow: rw, error: err.message }
           : { lat, lng, selectedLayer: layerCfg, error: err.message }

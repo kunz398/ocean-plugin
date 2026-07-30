@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef } from 'react';
 import { Clock, BarChart2, CalendarRange, Zap, Database } from 'lucide-react';
 import { setRuntimeProvider, getRuntimeProviderId } from '../services/inundationProviderFactory';
+import { fromZonedInputValue, toZonedInputValue, tzLabel } from '../utils/timeZoneFormat';
 
 const ZARR_UI_ENABLED = process.env.REACT_APP_ENABLE_ZARR_INUNDATION === 'true';
 
@@ -15,13 +16,6 @@ const PROVIDERS = [
   { id: 'zarr', label: 'Zarr', Icon: Database },
 ];
 
-function toDatetimeLocalValue(date) {
-  if (!date) return '';
-  const d = new Date(date);
-  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-  return d.toISOString().slice(0, 16);
-}
-
 function findNearestIndex(timestamps, targetDate) {
   if (!timestamps?.length || !targetDate) return 0;
   const t = new Date(targetDate).getTime();
@@ -34,7 +28,7 @@ function findNearestIndex(timestamps, targetDate) {
   return best;
 }
 
-export default function InundationWindowControl({ rangeWindow, setRangeWindow, availableTimestamps, disabled, currentTime }) {
+export default function InundationWindowControl({ rangeWindow, setRangeWindow, availableTimestamps, disabled, currentTime, timeDisplayZone = 'Pacific/Rarotonga' }) {
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [customError, setCustomError] = useState('');
@@ -95,17 +89,17 @@ export default function InundationWindowControl({ rangeWindow, setRangeWindow, a
       const endIndex   = findNearestIndex(availableTimestamps, rawEnd);
       const startTime  = availableTimestamps?.[startIndex] ?? rawStart;
       const endTime    = availableTimestamps?.[endIndex]   ?? rawEnd;
-      if (!customStart) setCustomStart(toDatetimeLocalValue(startTime));
-      if (!customEnd)   setCustomEnd(toDatetimeLocalValue(endTime));
+      if (!customStart) setCustomStart(toZonedInputValue(startTime, timeDisplayZone));
+      if (!customEnd)   setCustomEnd(toZonedInputValue(endTime, timeDisplayZone));
       setUiMode('custom');
       // Keep rangeWindow in its current state — no fetch until Apply
     }
-  }, [availableTimestamps, currentTime, customStart, customEnd, setRangeWindow]);
+  }, [availableTimestamps, currentTime, customStart, customEnd, setRangeWindow, timeDisplayZone]);
 
   const handleCustomApply = useCallback(() => {
     setCustomError('');
-    const start = customStart ? new Date(customStart) : null;
-    const end = customEnd ? new Date(customEnd) : null;
+    const start = customStart ? fromZonedInputValue(customStart, timeDisplayZone) : null;
+    const end = customEnd ? fromZonedInputValue(customEnd, timeDisplayZone) : null;
     if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       setCustomError('Please enter valid start and end times.');
       return;
@@ -126,7 +120,7 @@ export default function InundationWindowControl({ rangeWindow, setRangeWindow, a
     clearTimeout(applyTimerRef.current);
     // Keep spinner up until parent prop updates (or 20 s timeout)
     applyTimerRef.current = setTimeout(() => setIsApplying(false), 20000);
-  }, [customStart, customEnd, availableTimestamps, setRangeWindow]);
+  }, [customStart, customEnd, availableTimestamps, setRangeWindow, timeDisplayZone]);
 
   return (
     <div className="iwc-root" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -226,12 +220,12 @@ export default function InundationWindowControl({ rangeWindow, setRangeWindow, a
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
             <div>
-              <label style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '0.2rem' }}>Start</label>
+              <label style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '0.2rem' }}>{`Start (${tzLabel(timeDisplayZone)})`}</label>
               <input
                 type="datetime-local"
                 value={customStart}
-                min={availableTimestamps?.[0] ? toDatetimeLocalValue(availableTimestamps[0]) : undefined}
-                max={availableTimestamps?.length ? toDatetimeLocalValue(availableTimestamps[availableTimestamps.length - 1]) : undefined}
+                min={availableTimestamps?.[0] ? toZonedInputValue(availableTimestamps[0], timeDisplayZone) : undefined}
+                max={availableTimestamps?.length ? toZonedInputValue(availableTimestamps[availableTimestamps.length - 1], timeDisplayZone) : undefined}
                 onChange={e => setCustomStart(e.target.value)}
                 style={{
                   width: '100%',
@@ -246,12 +240,12 @@ export default function InundationWindowControl({ rangeWindow, setRangeWindow, a
               />
             </div>
             <div>
-              <label style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '0.2rem' }}>End</label>
+              <label style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: '0.2rem' }}>{`End (${tzLabel(timeDisplayZone)})`}</label>
               <input
                 type="datetime-local"
                 value={customEnd}
-                min={availableTimestamps?.[0] ? toDatetimeLocalValue(availableTimestamps[0]) : undefined}
-                max={availableTimestamps?.length ? toDatetimeLocalValue(availableTimestamps[availableTimestamps.length - 1]) : undefined}
+                min={availableTimestamps?.[0] ? toZonedInputValue(availableTimestamps[0], timeDisplayZone) : undefined}
+                max={availableTimestamps?.length ? toZonedInputValue(availableTimestamps[availableTimestamps.length - 1], timeDisplayZone) : undefined}
                 onChange={e => setCustomEnd(e.target.value)}
                 style={{
                   width: '100%',

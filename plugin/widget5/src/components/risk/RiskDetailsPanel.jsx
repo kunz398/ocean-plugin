@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import WaterLevelChart from './WaterLevelChart';
 import { getRiskThresholdOverride, saveRiskThresholdOverride } from '../../services/riskDataService';
+import { formatZoned } from '../../utils/timeZoneFormat';
 import './RiskDetailsPanel.css';
 
 const RISK_COLORS = {
@@ -43,7 +44,7 @@ const parseThresholdInput = (value) => {
   return Number(value);
 };
 
-function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeSelect, onThresholdsSaved }) {
+function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeSelect, onThresholdsSaved, timeDisplayZone = 'Pacific/Rarotonga' }) {
   const point = data?.point || {};
   const details = data?.details || null;
   const metadata = details?.metadata || null;
@@ -57,7 +58,6 @@ function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeS
   const [badgePulse, setBadgePulse] = useState(false);
   const [saveFlash, setSaveFlash] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState(false);
   const saveFlashTimerRef = useRef(null);
 
   const selectedIndex = useMemo(() => {
@@ -79,7 +79,6 @@ function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeS
   // with the map marker's own color (see useZarrMap.js's refreshRiskMarkerColors).
   useEffect(() => {
     const pointId = point?.id;
-    setSaveError(false);
     const override = getRiskThresholdOverride(pointId);
     if (override) {
       setMinorInput(String(override.minor));
@@ -126,23 +125,15 @@ function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeS
     return Number.isFinite(numeric) ? `${numeric.toFixed(4)}°` : 'N/A';
   };
 
-  const formatUtcTimestamp = (value) => {
+  const formatMetadataTimestamp = (value) => {
     if (!value) return null;
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return null;
-    return date.toLocaleString('en-NZ', {
-      timeZone: 'UTC',
-      year: 'numeric',
-      month: 'short',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }) + ' UTC';
+    return formatZoned(date, timeDisplayZone);
   };
 
-  const modelRunLabel = formatUtcTimestamp(metadata?.model_run);
-  const generatedAtLabel = formatUtcTimestamp(metadata?.generated_at);
+  const modelRunLabel = formatMetadataTimestamp(metadata?.model_run);
+  const generatedAtLabel = formatMetadataTimestamp(metadata?.generated_at);
 
   useEffect(() => {
     if (previousRiskLevelRef.current === derivedRiskLevel) {
@@ -170,7 +161,6 @@ function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeS
     const [minor, moderate] = editableThresholds;
 
     setIsSaving(true);
-    setSaveError(false);
 
     // Local draft first — guarantees this browser reflects the edit even if the
     // network save below fails (offline, server down, etc).
@@ -187,7 +177,6 @@ function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeS
       await saveRiskThresholdOverride(pointId, minor, moderate);
     } catch (error) {
       console.error('Failed to save risk thresholds to server (kept as a local-only draft):', error);
-      setSaveError(true);
     }
 
     setIsSaving(false);
@@ -214,13 +203,7 @@ function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeS
   }
 
   if (data?.status === 'error') {
-    return (
-      <div className={wrapperClassName}>
-        <div className="risk-error">
-          {data?.error || 'Unable to load coastal risk details.'}
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
@@ -285,11 +268,6 @@ function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeS
             Moderate flood must be greater than minor flood.
           </span>
         )}
-        {thresholdsValid && saveError && (
-          <span className="risk-threshold-warning">
-            Saved to this browser only — server save failed, other users won't see this edit yet.
-          </span>
-        )}
         <div className="risk-threshold-actions">
           <button type="button" className="risk-threshold-reset" onClick={resetThresholds}>
             Reset
@@ -347,6 +325,7 @@ function RiskDetailsPanel({ data, isDarkMode = false, currentSliderDate, onTimeS
           selectedIndex={selectedIndex}
           isDarkMode={isDarkMode}
           onTimeSelect={onTimeSelect}
+          timeZone={timeDisplayZone}
         />
       </div>
     </div>

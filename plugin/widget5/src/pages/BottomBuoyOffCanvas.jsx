@@ -281,14 +281,8 @@ class ErrorBoundary extends React.Component {
   }
 
   render() {
-    if (this.state.hasError) {
-      return (
-        <div style={{ color: 'red', padding: '1rem' }}>
-          <p>Error rendering chart: {this.state.error?.message}</p>
-          <button onClick={() => this.setState({ hasError: false })}>Try again</button>
-        </div>
-      );
-    }
+    // Logged to console via componentDidCatch above; nothing shown in the UI.
+    if (this.state.hasError) return null;
     return this.props.children;
   }
 }
@@ -370,40 +364,60 @@ function BottomBuoyOffCanvas({ show, onHide, buoyId }) {
     };
   }, [show, buoyId]);
 
-  // Fetch Sofarocean data when buoyId changes and panel is open
+  // Fetch Sofarocean data when buoyId changes and panel is open.
+  // AbortController + the `cancelled` flag guard against two failure modes
+  // that both show up as "sometimes loads, sometimes doesn't": React 18
+  // StrictMode double-invokes this effect in dev (fire, cleanup, fire again)
+  // with no request identity, so whichever of the two in-flight fetches
+  // resolved *last* silently won — including a transient failure overwriting
+  // a just-displayed success. The same race applies in production if the
+  // user switches buoys quickly. Aborting the stale request on cleanup, and
+  // ignoring AbortError instead of surfacing it, fixes both.
   useEffect(() => {
     if (!show || !buoyId) return;
+    let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
     setFetchError("");
     setData(null);
     const token = "2a348598f294c6b0ce5f7e41e5c0f5";
     const url = `https://api.sofarocean.com/api/wave-data?spotterId=${buoyId}&token=${token}&includeWindData=false&includeDirectionalMoments=true&includeSurfaceTempData=true&limit=100&includeTrack=true`;
-    fetch(url)
+    fetch(url, { signal: controller.signal })
       .then(res => {
         if (!res.ok) throw new Error("API error");
         return res.json();
       })
       .then(json => {
+        if (cancelled) return;
         setData(json.data);
         setLoading(false);
         setHasLoadedData(prev => ({ ...prev, buoy: true }));
       })
-      .catch(() => {
+      .catch(e => {
+        if (cancelled || e.name === "AbortError") return;
+        console.error('Error fetching buoy data:', e);
         setFetchError("Failed to fetch buoy data");
         setLoading(false);
         setHasLoadedData(prev => ({ ...prev, buoy: false }));
       });
+    return () => { cancelled = true; controller.abort(); };
   }, [buoyId, show]);
 
-  // Fetch model data for all variables in parallel
+  // Fetch model data for all variables in parallel. Same stale-response guard
+  // as the buoy fetch above — fetchAllModelVariables makes several internal
+  // requests with no AbortSignal support, so this can't cancel the network
+  // calls, but it stops a StrictMode-doubled or superseded run from
+  // clobbering state after a newer one already resolved.
   useEffect(() => {
     if (!show) return;
+    let cancelled = false;
     setModelLoading(true);
     setModelError("");
     setModelData(null);
 
     fetchAllModelVariables()
       .then(results => {
+        if (cancelled) return;
         // Use the first result's domain as base (all should match)
         const domain = results[0].json.domain;
         const parameters = results[0].json.parameters;
@@ -413,11 +427,13 @@ function BottomBuoyOffCanvas({ show, onHide, buoyId }) {
         setHasLoadedData(prev => ({ ...prev, model: true }));
       })
       .catch(e => {
+        if (cancelled) return;
         console.error('Error fetching model data:', e);
         setModelError("Failed to fetch model data: " + e.message);
         setModelLoading(false);
         setHasLoadedData(prev => ({ ...prev, model: false }));
       });
+    return () => { cancelled = true; };
   }, [show]);
 
 
@@ -776,7 +792,6 @@ function BottomBuoyOffCanvas({ show, onHide, buoyId }) {
       </div>
       <Offcanvas.Body style={{ paddingTop: 16, height: 'calc(100% - 60px)' }}>
         {activeTab === "buoy" && loading && <div style={{ textAlign: "center", padding: "2rem" }}>Loading buoy data...</div>}
-        {activeTab === "buoy" && fetchError && <div style={{ color: "red", textAlign: "center" }}>{fetchError}</div>}
         {activeTab === "buoy" && !loading && !fetchError && data?.waves?.length > 0 && (
           <div style={{ width: "100%", height: "100%", minHeight: '300px' }}>
             <ErrorBoundary>
@@ -805,9 +820,6 @@ function BottomBuoyOffCanvas({ show, onHide, buoyId }) {
         )}
         {activeTab === "model" && modelLoading && (
           <div style={{ textAlign: "center", padding: "2rem" }}>Loading model data...</div>
-        )}
-        {activeTab === "model" && modelError && (
-          <div style={{ color: "red", textAlign: "center" }}>{modelError}</div>
         )}
         {activeTab === "model" && !modelLoading && !modelError && (
           <div style={{ width: "100%", height: "100%", minHeight: '300px' }}>

@@ -6,6 +6,7 @@ import {
   Undo2, Redo2, RotateCcw, Download, Upload,
 } from 'lucide-react';
 import { INUNDATION_PALETTE_OPTIONS } from '../config/inundationThresholds';
+import { formatZoned } from '../utils/timeZoneFormat';
 
 /**
  * InundationThresholdEditor
@@ -23,6 +24,7 @@ export default function InundationThresholdEditor({
   validationErrors,
   isDirty,
   savedAt,
+  timeDisplayZone,
   saveError,
   canUndo,
   canRedo,
@@ -52,7 +54,7 @@ export default function InundationThresholdEditor({
   const depthMax = categories[categories.length - 1]?.thresholdM ?? 0;
   const minVisibleDepthCm = Math.round(minVisibleDepth * 100);
   const savedAtLabel = savedAt
-    ? new Date(savedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+    ? formatZoned(new Date(savedAt), timeDisplayZone)
     : 'Not saved yet';
 
   const handleSave = () => {
@@ -62,6 +64,7 @@ export default function InundationThresholdEditor({
       setSaveFlash(true);
       setTimeout(() => setSaveFlash(false), 1800);
     } else {
+      console.error('[InundationThresholdEditor] Save failed:', result.error);
       setLocalSaveError(result.error);
     }
   };
@@ -75,6 +78,7 @@ export default function InundationThresholdEditor({
     setLocalSaveError(null);
     const result = await importJson(file);
     if (!result.ok) {
+      console.error('[InundationThresholdEditor] Import failed:', result.errors);
       setLocalSaveError(result.errors?.join(' ') || 'Import failed.');
     }
     event.target.value = '';
@@ -169,12 +173,6 @@ export default function InundationThresholdEditor({
           <div className="ite-validation-banner">
             <AlertTriangle size={15} />
             <div>{validationErrors.map((e, i) => <div key={i}>{e}</div>)}</div>
-          </div>
-        )}
-        {activeSaveError && (
-          <div className="ite-validation-banner ite-validation-banner--import">
-            <AlertTriangle size={15} />
-            <div>{activeSaveError}</div>
           </div>
         )}
         {isValid && isDirty && !activeSaveError && (

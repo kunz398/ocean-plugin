@@ -1,7 +1,8 @@
 import React from 'react';
 import ThemeToggle from './ThemeToggle';
+import { formatZoned } from '../utils/timeZoneFormat';
 
-const ModernHeader = () => {
+const ModernHeader = ({ timeDisplayZone = 'Pacific/Rarotonga' }) => {
   const [currentTime, setCurrentTime] = React.useState(new Date());
 
   React.useEffect(() => {
@@ -11,17 +12,7 @@ const ModernHeader = () => {
     return () => clearInterval(timer);
   }, []);
 
-  const formatDateTime = (date) => {
-    return date.toLocaleString(undefined, {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    });
-  };
+  const formatDateTime = (date) => formatZoned(date, timeDisplayZone, { second: '2-digit' });
 
   return (
     <nav className="modern-header" style={{

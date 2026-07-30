@@ -10,6 +10,7 @@ import {
 import LandingAreaTimeseries, { closestStep } from '../../pages/LandingAreaTimeseries';
 import LandingAreaComparisonHeatmap from './LandingAreaComparisonHeatmap';
 import { useLandingAreaComparison } from '../../hooks/useLandingAreaComparison';
+import { formatZonedTime, tzLabel } from '../../utils/timeZoneFormat';
 import './LandingAreaDetailsPanel.css';
 
 const HAZARD_ICONS = {
@@ -23,19 +24,12 @@ const DRIVER_LABELS = { none: 'None exceeded', wind: 'Wind', waves: 'Waves', win
 const TEXT_PRIMARY = '#f8fafc';
 const TEXT_MUTED = 'rgba(203, 213, 225, 0.65)';
 
-const NUT_TIME_FORMATTER = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Pacific/Niue',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-});
-
 // Wraps LandingAreaTimeseries with the header/metrics/verification-notice
 // chrome the bottom-sheet needs — kept separate from the chart component so
 // the chart stays a reusable "just render this series" piece (mirrors
 // RiskDetailsPanel/SuitabilityDetailsPanel's split for the other two modes
 // BottomOffCanvas renders).
-function LandingAreaDetailsPanel({ landingArea, selectedVessel, steps, loading, error, currentSliderDate, apiBase, seaLevelTimeseries }) {
+function LandingAreaDetailsPanel({ landingArea, selectedVessel, steps, loading, error, currentSliderDate, apiBase, seaLevelTimeseries, timeDisplayZone = 'Pacific/Niue' }) {
   const vesselLabel = VESSEL_CLASSES.find((v) => v.value === selectedVessel)?.label ?? selectedVessel;
 
   // 'location' = this one site over time (existing chart); 'compare' = every
@@ -79,7 +73,7 @@ function LandingAreaDetailsPanel({ landingArea, selectedVessel, steps, loading, 
   const HazardIcon = nowStep ? (HAZARD_ICONS[nowStep.hazard_class] ?? TriangleAlert) : null;
 
   const validTimeLabel = nowStep?.valid_time
-    ? `Valid ${NUT_TIME_FORMATTER.format(new Date(nowStep.valid_time))} NUT`
+    ? `Valid ${formatZonedTime(new Date(nowStep.valid_time), timeDisplayZone)} ${tzLabel(timeDisplayZone)}`
     : null;
 
   // This panel sits directly on the offcanvas's permanently dark-navy
@@ -177,12 +171,11 @@ function LandingAreaDetailsPanel({ landingArea, selectedVessel, steps, loading, 
           loading={comparison.loading}
           error={comparison.error}
           vesselLabel={vesselLabel}
+          timeDisplayZone={timeDisplayZone}
         />
       ) : loading ? (
         <div style={{ textAlign: 'center', padding: '2rem', color: TEXT_MUTED }}>Loading suitability timeseries…</div>
-      ) : error ? (
-        <div style={{ textAlign: 'center', padding: '2rem', color: '#f87171' }}>{error}</div>
-      ) : (
+      ) : error ? null : (
         <>
           {nowStep && (
             <div className="landing-panel__stat-grid">

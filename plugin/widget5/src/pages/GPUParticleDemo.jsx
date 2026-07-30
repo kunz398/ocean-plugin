@@ -41,7 +41,6 @@ function GPUParticleDemo() {
   const [layers, setLayers] = useState([]);
   const [animationState, setAnimationState] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [status, setStatus] = useState('Initializing...');
 
   // Refs
@@ -117,9 +116,8 @@ function GPUParticleDemo() {
 
     } catch (err) {
       console.error(`❌ Failed to load timestep ${timestep}:`, err);
-      setError(`Failed to load data: ${err.message}`);
     }
-  }, [updateLayers, setError]);
+  }, [updateLayers]);
 
   // Handle animation updates
   const handleAnimationUpdate = useCallback((state) => {
@@ -184,14 +182,12 @@ function GPUParticleDemo() {
         console.log('✅ Initialization complete!');
 
       } catch (err) {
-        console.error('❌ Initialization failed:', err);
         const baseMessage = err.message || 'Failed to initialize GPU system';
         const improvedMessage = err instanceof TypeError
           ? `${baseMessage}. ${getZarrConnectionHelp()}`
           : baseMessage;
-        setError(improvedMessage);
+        console.error('❌ Initialization failed:', improvedMessage, err);
         setIsLoading(false);
-        setStatus('Error: ' + improvedMessage);
       }
     }
 
@@ -266,17 +262,6 @@ function GPUParticleDemo() {
         <div style={{ fontSize: 48, marginBottom: 20 }}>🌊</div>
         <h2>Loading GPU Particle System...</h2>
         <p style={{ opacity: 0.7, marginTop: 10 }}>{status}</p>
-        {error && (
-          <div style={{
-            marginTop: 20,
-            padding: 20,
-            background: '#ff4444',
-            borderRadius: 8,
-            maxWidth: 500
-          }}>
-            <strong>Error:</strong> {error}
-          </div>
-        )}
       </div>
     );
   }

@@ -1,23 +1,24 @@
 import React, { useMemo } from 'react';
 import { SUITABILITY_HAZARD_COLORS, SUITABILITY_HAZARD_LABELS } from '../../lib/NiueSuitabilityOverlay';
 import { selectHeatmapSteps, findMatchingStep } from '../../utils/SuitabilityPDFExporter';
+import { formatZoned, tzLabel } from '../../utils/timeZoneFormat';
 
 const TEXT_PRIMARY = '#f8fafc';
 const TEXT_MUTED = 'rgba(203, 213, 225, 0.65)';
 const UNAVAILABLE_COLOR = '#475569';
 
-const COLUMN_TIME_FORMATTER = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Pacific/Niue', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
+const formatColumnTime = (date, timeZone) => formatZoned(date, timeZone, {
+  withLabel: false, year: undefined, month: 'short', day: '2-digit',
 });
-const CELL_TIME_FORMATTER = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Pacific/Niue', weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false,
+const formatCellTime = (date, timeZone) => formatZoned(date, timeZone, {
+  withLabel: false, year: undefined, month: 'short', day: '2-digit', weekday: 'short',
 });
 
 // Web equivalent of SuitabilityPDFExporter.js's drawLandingAreaHeatmapPage —
 // same source data shape (rows of {name, steps}), same selectHeatmapSteps
 // column-sampling, so "which sites look best over the next week" reads the
 // same way whether you're looking at the PDF or the live panel.
-function LandingAreaComparisonHeatmap({ rows, loading, error, vesselLabel }) {
+function LandingAreaComparisonHeatmap({ rows, loading, vesselLabel, timeDisplayZone = 'Pacific/Niue' }) {
   const referenceSteps = useMemo(() => (
     rows.reduce((best, row) => (row.steps.length > (best?.length ?? 0) ? row.steps : best), null) ?? []
   ), [rows]);
@@ -31,9 +32,6 @@ function LandingAreaComparisonHeatmap({ rows, loading, error, vesselLabel }) {
 
   if (loading) {
     return <div style={{ textAlign: 'center', padding: '2rem', color: TEXT_MUTED }}>Loading landing area comparison…</div>;
-  }
-  if (error) {
-    return <div style={{ textAlign: 'center', padding: '2rem', color: '#f87171' }}>{error}</div>;
   }
   if (!rows.length || !heatmapSteps.length) {
     return <div style={{ textAlign: 'center', padding: '2rem', color: TEXT_MUTED }}>No comparison data available.</div>;
@@ -61,7 +59,7 @@ function LandingAreaComparisonHeatmap({ rows, loading, error, vesselLabel }) {
               key={hs.time_index ?? i}
               style={{ fontSize: '0.6rem', color: TEXT_MUTED, textAlign: 'center', lineHeight: 1.25, whiteSpace: 'pre-line' }}
             >
-              {COLUMN_TIME_FORMATTER.format(new Date(hs.time)).replace(', ', '\n')}
+              {formatColumnTime(new Date(hs.time), timeDisplayZone).replace(', ', '\n')}
             </div>
           ))}
 
@@ -87,7 +85,7 @@ function LandingAreaComparisonHeatmap({ rows, loading, error, vesselLabel }) {
                 return (
                   <div
                     key={hs.time_index ?? i}
-                    title={`${row.name ?? row.label}: ${label}${sampleCount ? ` · ${sampleCount} cells` : ''} — ${CELL_TIME_FORMATTER.format(new Date(hs.time))} NUT`}
+                    title={`${row.name ?? row.label}: ${label}${sampleCount ? ` · ${sampleCount} cells` : ''} — ${formatCellTime(new Date(hs.time), timeDisplayZone)} ${tzLabel(timeDisplayZone)}`}
                     style={{ height: 18, borderRadius: 3, background: color }}
                   />
                 );

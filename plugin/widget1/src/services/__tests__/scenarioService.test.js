@@ -453,6 +453,57 @@ describe('findBetterDeparture', () => {
       .rejects.toThrow('valid departure time');
     expect(fetchRouteForecast).not.toHaveBeenCalled();
   });
+
+  test('never probes offsets that would land past maxDepartureTime', async () => {
+    // departureTime is 2026-07-09T12:00:00Z; +3h/+6h land at or before
+    // 20:00Z, +12h/+24h don't — only the first two should ever be requested.
+    fetchRouteForecast
+      .mockResolvedValueOnce(routeResult({ summary: { worst_hazard_class: 2, distance_nm: 10, duration_hours: 1 } }))
+      .mockResolvedValueOnce(routeResult({ summary: { worst_hazard_class: 0, distance_nm: 10, duration_hours: 1 } }));
+
+    const result = await findBetterDeparture('https://api', {
+      ...baseInputs,
+      maxDepartureTime: new Date('2026-07-09T20:00:00Z'),
+    });
+
+    expect(fetchRouteForecast).toHaveBeenCalledTimes(2);
+    expect(result.found).toBe(true);
+    expect(result.offsetHours).toBe(6);
+    expect(result.checkedOffsets).toEqual([3, 6]);
+    expect(result.skippedOffsets).toEqual([12, 24]);
+  });
+
+  test('probes nothing and reports found:false when every offset lands past maxDepartureTime', async () => {
+    const result = await findBetterDeparture('https://api', {
+      ...baseInputs,
+      // The current departure time itself — every positive offset overshoots it.
+      maxDepartureTime: new Date(baseInputs.departureTime),
+    });
+
+    expect(fetchRouteForecast).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      found: false,
+      checkedOffsets: [],
+      failedOffsets: [],
+      skippedOffsets: DEPARTURE_PROBE_OFFSETS_HOURS,
+    });
+  });
+
+  test('found:false still reports which offsets were actually checked when every probe fails', async () => {
+    fetchRouteForecast
+      .mockRejectedValueOnce(new Error('network blip'))
+      .mockRejectedValueOnce(new Error('network blip'));
+
+    const result = await findBetterDeparture('https://api', {
+      ...baseInputs,
+      maxDepartureTime: new Date('2026-07-09T20:00:00Z'),
+    });
+
+    expect(result.found).toBe(false);
+    expect(result.checkedOffsets).toEqual([3, 6]);
+    expect(result.failedOffsets).toEqual([3, 6]);
+    expect(result.skippedOffsets).toEqual([12, 24]);
+  });
 });
 
 describe('advisory brief config builders', () => {

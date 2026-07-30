@@ -233,6 +233,42 @@ const getVesselSelectorIconSrc = (vesselCode, hazardClass = 0) => {
 // implementation here dormant so this branch exposes only the core controls.
 const SHOW_ADVANCED_WAVE_CONTROLS = false;
 
+const stationColor = (station) => station.type === 'tide-gauge'
+  ? '#f59e0b'
+  : station.highlight ? '#22c55e' : '#0ea5e9';
+
+const OceanStationsLegend = ({ stations, onSelect }) => {
+  if (!stations?.length) return null;
+  return (
+    <div className="marine-legend-stations">
+      <div className="marine-legend-stations__title">Ocean Stations &middot; Niue</div>
+      <div className="marine-legend-stations__list">
+        {stations.map((station) => {
+          const color = stationColor(station);
+          return (
+            <button
+              key={station.id}
+              type="button"
+              className="marine-legend-station"
+              style={{ '--station-color': color, '--station-background': `${color}1f` }}
+              onClick={() => onSelect?.(station)}
+            >
+              <span className="marine-legend-station__name">
+                <span className="marine-legend-station__dot" />
+                {station.label ?? station.id}
+              </span>
+              <span className="marine-legend-station__type">
+                {station.type === 'tide-gauge' ? 'Tide gauge' : station.highlight ? 'Buoy + model' : 'Live buoy'}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="marine-legend-stations__footer">Click a station for live data</div>
+    </div>
+  );
+};
+
 const ForecastApp = ({
   WAVE_FORECAST_LAYERS,
   ALL_LAYERS,
@@ -249,6 +285,8 @@ const ForecastApp = ({
   setPlaySpeedMs,
   currentSliderDate,
   capTime,
+  forecastEndTime,
+  forecastStartTime,
   setActiveLayers,
   mapRef,
   mapInstance,
@@ -293,8 +331,11 @@ const ForecastApp = ({
   onRunScenario,
   onRunAllScenarios,
   inundationThresholds,
+  oceanStations = [],
+  onOceanStationSelect,
+  timeDisplayZone,
+  setTimeDisplayZone,
 }) => {
-  const [timeDisplayZone, setTimeDisplayZone] = useState('Pacific/Niue');
   const [showTimelineInPanel, setShowTimelineInPanel] = useState(false);
   const [showThresholdEditor, setShowThresholdEditor] = useState(false);
   const [showPdfModal, setShowPdfModal] = useState(false);
@@ -872,6 +913,7 @@ const ForecastApp = ({
                   for {selectedVesselMeta?.label ?? 'this vessel'} — this is model data, not a display error.
                 </div>
               )}
+              <OceanStationsLegend stations={oceanStations} onSelect={onOceanStationSelect} />
             </div>
           )}
 
@@ -927,6 +969,7 @@ const ForecastApp = ({
                   </>
                 );
               })()}
+              <OceanStationsLegend stations={oceanStations} onSelect={onOceanStationSelect} />
             </div>
           )}
           
@@ -1066,25 +1109,27 @@ const ForecastApp = ({
             </div>
           )} */}
 
-          {/* Bottom timeline overlay — always visible, drives all forecast layers */}
-          <ForecastTimeline
-            sliderIndex={sliderIndex}
-            totalSteps={totalSteps}
-            minIndex={minIndex}
-            currentSliderDate={currentSliderDate}
-            capTime={capTime}
-            isPlaying={isPlaying}
-            playSpeedMs={playSpeedMs}
-            timeDisplayZone={timeDisplayZone}
-            onTimeIndexChange={handleSliderChange}
-            onPlayPause={handlePlayToggle}
-            onPrevious={handlePreviousTimestamp}
-            onNext={handleNextTimestamp}
-            onSpeedChange={setPlaySpeedMs}
-            onTimezoneChange={setTimeDisplayZone}
-            showInPanel={showTimelineInPanel}
-            onTogglePanel={() => setShowTimelineInPanel((v) => !v)}
-          />
+          {/* Bottom timeline overlay — hidden while pinned to the side panel */}
+          {!showTimelineInPanel && (
+            <ForecastTimeline
+              sliderIndex={sliderIndex}
+              totalSteps={totalSteps}
+              minIndex={minIndex}
+              currentSliderDate={currentSliderDate}
+              capTime={capTime}
+              isPlaying={isPlaying}
+              playSpeedMs={playSpeedMs}
+              timeDisplayZone={timeDisplayZone}
+              onTimeIndexChange={handleSliderChange}
+              onPlayPause={handlePlayToggle}
+              onPrevious={handlePreviousTimestamp}
+              onNext={handleNextTimestamp}
+              onSpeedChange={setPlaySpeedMs}
+              onTimezoneChange={setTimeDisplayZone}
+              showInPanel={showTimelineInPanel}
+              onTogglePanel={() => setShowTimelineInPanel((v) => !v)}
+            />
+          )}
         </div>
 
         <div className="controls-panel">
@@ -1139,6 +1184,8 @@ const ForecastApp = ({
                   onNext={handleNextTimestamp}
                   onSpeedChange={setPlaySpeedMs}
                   onTimezoneChange={setTimeDisplayZone}
+                  showInPanel={showTimelineInPanel}
+                  onTogglePanel={() => setShowTimelineInPanel((v) => !v)}
                 />
               )}
 
@@ -1430,6 +1477,9 @@ const ForecastApp = ({
                       setRouteDepartureTime={setRouteDepartureTime}
                       routeForecastLoading={routeForecastLoading}
                       routeForecastError={routeForecastError}
+                      maxDepartureTime={forecastEndTime ?? null}
+                      minDepartureTime={forecastStartTime ?? null}
+                      timeDisplayZone={timeDisplayZone}
                       onRunRouteForecast={onRunRouteForecast}
                       onClearRoute={onClearRoute}
                       onUndoRoutePoint={onUndoRoutePoint}

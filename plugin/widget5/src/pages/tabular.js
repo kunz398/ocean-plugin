@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { zonedTableTimeParts } from "../utils/timeZoneFormat";
 
 // Jet colormap: returns rgb string for value in [min, max]
 function jetColor(value, min = 0, max = 4) {
@@ -150,12 +151,9 @@ function filterToSixHourly(times, values) {
   return { times: filteredTimes, values: filteredValues };
 }
 
-function formatTableTime(time) {
+function formatTableTime(time, timeZone) {
   const date = new Date(time);
-  const days = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
-  const dayCode = days[date.getDay()];
-  const dayNum = String(date.getDate());
-  const hour = `${String(date.getHours()).padStart(2, '0')}hr`;
+  const { dayCode, dayNum, hour } = zonedTableTimeParts(date, timeZone);
   return (
     <>
       {dayCode} <br />
@@ -165,7 +163,7 @@ function formatTableTime(time) {
   );
 }
 
-function Tabular({ perVariableData }) {
+function Tabular({ perVariableData, timeDisplayZone = 'Pacific/Rarotonga' }) {
   const [tableRows, setTableRows] = useState([]);
   const [times, setTimes] = useState([]);
   const [error, setError] = useState("");
@@ -224,6 +222,7 @@ function Tabular({ perVariableData }) {
     setTimes(timesArr || []);
     
     if (allRows.every(s => !s.values.length)) {
+      console.error('[tabular] No tabular timeseries data returned for', perVariableData);
       setError("No tabular timeseries data returned.");
     } else {
       setError("");
@@ -231,8 +230,7 @@ function Tabular({ perVariableData }) {
   }, [perVariableData]);
 
   if (!perVariableData) return <div>No data available.</div>;
-  if (error) return <div style={{ color: "red" }}>{error}</div>;
-  if (!times.length || !tableRows.length) return <div>No tabular timeseries data available.</div>;
+  if (error || !times.length || !tableRows.length) return <div>No tabular timeseries data available.</div>;
 
   // Check if all values are null
   const allValuesNull = tableRows.every(row => 
@@ -329,7 +327,7 @@ function Tabular({ perVariableData }) {
             <th style={thFirstCol}>Parameter</th>
             {times.map((t) => (
               <th key={t} style={thOtherCols}>
-                {formatTableTime(t)}
+                {formatTableTime(t, timeDisplayZone)}
               </th>
             ))}
           </tr>

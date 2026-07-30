@@ -10,7 +10,7 @@ import { useZarrMap } from '../hooks/useZarrMap';
 import useInundationThresholds from '../hooks/useInundationThresholds';
 import { useLandingAreaTimeseries } from '../hooks/useLandingAreaTimeseries';
 import { useSeaLevelTimeseries } from '../hooks/useSeaLevelTimeseries';
-import { fetchRouteForecast, parseRouteFile } from '../services/routeForecastService';
+import { fetchRouteForecast, parseRouteFile, parseAsUtcWallClock } from '../services/routeForecastService';
 import {
   MAX_SCENARIOS,
   createScenario,
@@ -80,6 +80,11 @@ function Home() {
   const [routePickMode, setRoutePickMode] = useState(false);
   const [routeSpeedKt, setRouteSpeedKt] = useState(8);
   const [routeDepartureTime, setRouteDepartureTime] = useState('');
+  // App-wide display zone for every date/time readout (NUT = Pacific/Niue,
+  // fixed UTC-11 year-round, or UTC) — lifted here (rather than living inside
+  // ForecastApp, which owned it before) so ModernHeader and the BottomOffCanvas
+  // panels can respect the same toggle as the timeline.
+  const [timeDisplayZone, setTimeDisplayZone] = useState('Pacific/Niue');
   const [routeForecastResult, setRouteForecastResult] = useState(null);
   const [routeForecastLoading, setRouteForecastLoading] = useState(false);
   const [routeForecastError, setRouteForecastError] = useState('');
@@ -173,6 +178,7 @@ function Home() {
       setRouteForecastError('');
       setRoutePickMode(false);
     } catch (err) {
+      console.error('[Home] Route import failed:', err);
       setRouteForecastError(err.message || 'Imported route could not be read.');
     }
   }, []);
@@ -225,8 +231,31 @@ function Home() {
     routeForecastResult,
   });
 
+  // Layer errors are dev/ops signal, not something to alarm the end user with —
+  // log to console instead of the "Layer error" banner this used to render.
+  useEffect(() => {
+    if (overlayError) console.error('[Home] Layer error:', overlayError);
+  }, [overlayError]);
+
   const seaLevelStartTime = capTime.availableTimestamps?.[0]?.toISOString?.() ?? null;
   const seaLevelEndTime = capTime.availableTimestamps?.[capTime.availableTimestamps.length - 1]?.toISOString?.() ?? null;
+  // Last timestep of the currently active wave-forecast layer — the single
+  // source of truth for "how far ahead can a route/vessel-suitability
+  // departure time go." Shared by the departure-time picker's max (via
+  // ForecastApp -> RouteForecastControls), the run-forecast clamp below, and
+  // findBetterDeparture's own probe-offset filtering, so all three always
+  // agree on the same boundary.
+  const forecastEndTime = useMemo(
+    () => capTime.availableTimestamps?.[capTime.availableTimestamps.length - 1] ?? null,
+    [capTime.availableTimestamps]
+  );
+  // First timestep of the currently active wave-forecast layer — the lower
+  // bound counterpart to forecastEndTime, so the departure-time picker can't
+  // be set before the forecast window even starts.
+  const forecastStartTime = useMemo(
+    () => capTime.availableTimestamps?.[0] ?? null,
+    [capTime.availableTimestamps]
+  );
   const seaLevelTimeseries = useSeaLevelTimeseries(
     suitabilityApiBase,
     seaLevelStartTime,
@@ -237,7 +266,28 @@ function Home() {
   const totalSteps = Math.max(1, timeCount) - 1;
 
   const handleRunRouteForecast = useCallback(async () => {
-    const departureTime = routeDepartureTime || currentSliderDate?.toISOString?.();
+    let departureTime = routeDepartureTime || currentSliderDate?.toISOString?.();
+    // Belt-and-braces: RouteForecastControls constrains and clamps the date
+    // picker itself, but a departure time can still reach here stale (e.g.
+    // set before a layer switch shortened the forecast window, or restored
+    // from an imported/saved scenario) — never send the backend a departure
+    // beyond the data we actually have.
+    // parseAsUtcWallClock, not new Date() — departureTime here is sometimes
+    // the truncated no-Z routeDepartureTime string (which new Date() would
+    // silently parse as local time, not UTC) and sometimes a full Z-suffixed
+    // ISO string from currentSliderDate; only parseAsUtcWallClock handles both correctly.
+    if (departureTime && forecastEndTime && parseAsUtcWallClock(departureTime)?.getTime() > forecastEndTime.getTime()) {
+      console.warn(
+        `[Home] Route departure time ${departureTime} is beyond the forecast end (${forecastEndTime.toISOString()}) — clamping.`
+      );
+      departureTime = forecastEndTime.toISOString();
+    }
+    if (departureTime && forecastStartTime && parseAsUtcWallClock(departureTime)?.getTime() < forecastStartTime.getTime()) {
+      console.warn(
+        `[Home] Route departure time ${departureTime} is before the forecast start (${forecastStartTime.toISOString()}) — clamping.`
+      );
+      departureTime = forecastStartTime.toISOString();
+    }
     clearRouteSuggestions(); // a fresh result invalidates suggestions computed against the old one
     setRouteForecastLoading(true);
     setRouteForecastError('');
@@ -267,6 +317,7 @@ function Home() {
       setShowBottomCanvas(true);
     } catch (err) {
       const message = err.message || 'Route forecast failed. Please try again.';
+      console.error('[Home] Route forecast failed:', err);
       setRouteForecastError(message);
       setRouteForecastResult(null);
       setBottomCanvasData({
@@ -281,7 +332,7 @@ function Home() {
     } finally {
       setRouteForecastLoading(false);
     }
-  }, [currentSliderDate, routeDepartureTime, routePoints, routeSpeedKt, selectedVessel, suitabilityApiBase, capTime.modelRunStart, clearRouteSuggestions]);
+  }, [currentSliderDate, routeDepartureTime, routePoints, routeSpeedKt, selectedVessel, suitabilityApiBase, capTime.modelRunStart, forecastEndTime, forecastStartTime, clearRouteSuggestions]);
 
   // ── Scenario comparison ─────────────────────────────────────────────────
   const handleSaveCurrentAsScenario = useCallback(() => {
@@ -369,16 +420,26 @@ function Home() {
         vessel: selectedVessel,
         departureTime: routeForecastResult.departure_time,
         speedKt: routeSpeedKt,
+        maxDepartureTime: forecastEndTime,
       }, { onProgress: setDepartureSuggestionProgress });
-      setDepartureSuggestionResult(result);
-      if (!result) setDepartureSuggestionError('No better departure window found in the next 24 hours.');
+      setDepartureSuggestionResult(result.found ? result : null);
+      if (!result.found) {
+        setDepartureSuggestionError(
+          result.checkedOffsets.length === 0
+            ? 'Already at the end of the available forecast — no later departure times to check.'
+            : result.skippedOffsets.length > 0
+              ? `No better departure window found in the next ${Math.max(...result.checkedOffsets)}h (the forecast ends before later options could be checked).`
+              : 'No better departure window found in the next 24 hours.'
+        );
+      }
     } catch (err) {
+      console.error('[Home] Departure suggestion failed:', err);
       setDepartureSuggestionError(err.message || 'Could not check alternative departure times.');
     } finally {
       setDepartureSuggestionLoading(false);
       setDepartureSuggestionProgress(null);
     }
-  }, [routeForecastResult, departureSuggestionLoading, suitabilityApiBase, routePoints, selectedVessel, routeSpeedKt]);
+  }, [routeForecastResult, departureSuggestionLoading, suitabilityApiBase, routePoints, selectedVessel, routeSpeedKt, forecastEndTime]);
 
   // Applies an already-fetched suggestion directly — no redundant re-fetch,
   // we already have the real result from findBetterDeparture. Setting
@@ -424,6 +485,12 @@ function Home() {
     removePinMarker?.();
   }, [removePinMarker]);
 
+  const handleBuoySelect = useCallback((buoy) => {
+    setSelectedBuoyId(buoy.id);
+    setSelectedBuoyType(buoy.type);
+    setShowBuoyCanvas(true);
+  }, []);
+
   const handleTimeSelect = useCallback((date) => {
     const timestamps = capTime.availableTimestamps;
     if (!timestamps?.length || !date) return;
@@ -465,9 +532,7 @@ function Home() {
       ].join(';');
       el.addEventListener('click', (event) => {
         event.stopPropagation();
-        setSelectedBuoyId(buoy.id);
-        setSelectedBuoyType(buoy.type);
-        setShowBuoyCanvas(true);
+        handleBuoySelect(buoy);
       });
 
       return new maplibregl.Marker({ element: el })
@@ -479,7 +544,7 @@ function Home() {
       buoyMarkersRef.current.forEach((marker) => marker.remove());
       buoyMarkersRef.current = [];
     };
-  }, [mapInstance]);
+  }, [handleBuoySelect, mapInstance]);
 
   // Persistent landing-area flag marker — separate from useZarrMap's
   // transient click-query pin (pinMarkerRef/addPinMarker/removePinMarker).
@@ -523,7 +588,7 @@ function Home() {
 
   return (
     <div style={widgetContainerStyle}>
-      <ModernHeader capTime={capTime} />
+      <ModernHeader capTime={capTime} timeDisplayZone={timeDisplayZone} />
       <ForecastApp
         inundationThresholds={inundationThresholds}
         WAVE_FORECAST_LAYERS={allLayers}
@@ -549,6 +614,10 @@ function Home() {
         setSelectedVessel={setSelectedVessel}
         currentSliderDate={currentSliderDate}
         capTime={capTime}
+        forecastEndTime={forecastEndTime}
+        forecastStartTime={forecastStartTime}
+        timeDisplayZone={timeDisplayZone}
+        setTimeDisplayZone={setTimeDisplayZone}
         overlayStats={overlayStats}
         activeLayers={activeLayers}
         setActiveLayers={setActiveLayers}
@@ -589,115 +658,16 @@ function Home() {
         onRemoveScenario={handleRemoveScenario}
         onRunScenario={handleRunScenario}
         onRunAllScenarios={handleRunAllScenarios}
+        oceanStations={NIUE_BUOYS}
+        onOceanStationSelect={handleBuoySelect}
       />
-
-      {overlayError && (
-        <div style={{
-          position: 'fixed',
-          bottom: 80,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: 'rgba(220,53,69,0.92)',
-          color: '#fff',
-          padding: '8px 16px',
-          borderRadius: 8,
-          fontSize: 13,
-          zIndex: 10010,
-          maxWidth: 480,
-          textAlign: 'center',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-        }}>
-          Layer error: {overlayError}
-        </div>
-      )}
-
-      <div
-        style={{
-          position: 'absolute',
-          bottom: 'calc(150px + env(safe-area-inset-bottom, 0px))',
-          left: 20,
-          zIndex: 999,
-          minWidth: 168,
-          background: 'linear-gradient(180deg, rgba(12,74,110,0.97) 0%, rgba(8,54,82,0.97) 100%)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          border: '1px solid rgba(14, 165, 233, 0.28)',
-          borderRadius: 12,
-          padding: '11px 13px',
-          boxShadow: '0 8px 32px rgba(12, 74, 110, 0.4), inset 0 1px 0 rgba(255,255,255,0.06)',
-          color: '#ffffff',
-          fontFamily: "'SF Mono', 'Monaco', 'Consolas', monospace",
-        }}
-      >
-        <div style={{
-          fontSize: 9,
-          fontWeight: 700,
-          letterSpacing: '0.09em',
-          textTransform: 'uppercase',
-          color: '#67e8f9',
-          marginBottom: 8,
-        }}>
-          Ocean Stations &middot; Niue
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {NIUE_BUOYS.map((buoy) => {
-            const color = buoyMarkerColor(buoy);
-            return (
-              <div
-                key={buoy.id}
-                style={{
-                  position: 'relative',
-                  overflow: 'hidden',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 1,
-                  borderLeft: `3px solid ${color}`,
-                  borderRadius: 6,
-                  padding: '4px 8px',
-                  background: `${color}1f`,
-                }}
-              >
-                <div style={{
-                  position: 'absolute', top: -14, right: -10,
-                  width: 40, height: 40, borderRadius: '50%',
-                  background: `radial-gradient(circle, ${color}33 0%, transparent 70%)`,
-                  pointerEvents: 'none',
-                }} />
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: color,
-                    boxShadow: `0 0 5px ${color}`,
-                    animation: 'pulse-animation 2s infinite',
-                    flexShrink: 0,
-                  }} />
-                  <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.01em' }}>{buoy.label ?? buoy.id}</span>
-                </div>
-                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.65)', marginLeft: 12 }}>
-                  {buoy.type === 'tide-gauge' ? 'Tide gauge' : buoy.highlight ? 'Buoy + model' : 'Live buoy'}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-        <div style={{
-          fontSize: 9,
-          color: 'rgba(255,255,255,0.55)',
-          marginTop: 8,
-          paddingTop: 6,
-          borderTop: '1px solid rgba(255,255,255,0.1)',
-        }}>
-          Click a station for live data
-        </div>
-      </div>
       <BottomOffCanvas
         show={showBottomCanvas}
         onTimeSelect={handleTimeSelect}
         onHide={handleHideBottomCanvas}
         data={bottomCanvasData}
         currentSliderDate={currentSliderDate}
+        timeDisplayZone={timeDisplayZone}
         landingAreaTimeseries={landingAreaTimeseries}
         seaLevelTimeseries={seaLevelTimeseries}
         suitabilityApiBase={suitabilityApiBase}

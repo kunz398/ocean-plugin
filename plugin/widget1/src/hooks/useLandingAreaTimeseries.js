@@ -60,6 +60,7 @@ export function useLandingAreaTimeseries(landingArea, vessel, apiBase) {
         }
       }
     })().catch((err) => {
+      console.error('[useLandingAreaTimeseries] Failed to load landing area timeseries:', err);
       if (!cancelled) setState({ loading: false, error: err.message, data: null });
     });
 

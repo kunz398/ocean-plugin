@@ -256,9 +256,9 @@ function buildZarrUrl(datasetName, baseUrl) {
   return `${origin}${url.startsWith('/') ? '' : '/'}${url}`;
 }
 
-async function fetchZarrAttrs(storeUrl, variableName) {
+async function fetchZarrAttrs(storeUrl, variableName, signal) {
   try {
-    const resp = await fetch(`${storeUrl}/.zmetadata`);
+    const resp = await fetch(`${storeUrl}/.zmetadata`, { signal });
     if (!resp.ok) return null;
     const meta = await resp.json();
     return meta?.metadata?.[`${variableName}/.zattrs`] ?? null;
@@ -267,8 +267,8 @@ async function fetchZarrAttrs(storeUrl, variableName) {
   }
 }
 
-async function openZarrArray(storeUrl, varPath) {
-  const store = new HTTPStore(storeUrl);
+async function openZarrArray(storeUrl, varPath, signal) {
+  const store = new HTTPStore(storeUrl, { fetchOptions: { signal } });
   return openArray({ store, path: varPath, mode: 'r' });
 }
 
@@ -284,7 +284,8 @@ export class UgridOverlay {
     this.config = config;
     this._contoursEnabled = config.contours?.visibleByDefault ?? config.contours?.enabled ?? true;
     this.overlay = new MapboxOverlay({ interleaved: true, layers: [] });
-    this.map.addControl(this.overlay);
+    // addControl() is deferred to _initialize() (after a settle-frame buffer),
+    // not called here — see the comment there for why.
 
     this.dataset = null;
     this.variableArr = null;
@@ -297,7 +298,20 @@ export class UgridOverlay {
     this.mounted = true;
     this.renderRequestId = 0;
     this.renderTimeout = null;
-    this.didAutoFit = false;
+    // Shared across every UgridOverlay instance for this map (see useZarrMap.js
+    // autoFitStateRef) so switching between wave layers only camera-snaps once
+    // per session, not on every switch. Falls back to a private flag if no
+    // shared state was passed in.
+    this.autoFitState = config.autoFitState ?? { done: false };
+    // Cancels every zarr metadata/chunk fetch this instance has in flight —
+    // aborted in destroy(). Without this, switching layers left abandoned
+    // fetches (HTTPStore has no cancellation of its own) running to
+    // completion in the background; rapid switching (e.g. clicking through
+    // several forecast variables in a few seconds) could pile up enough of
+    // them to exhaust the browser's per-origin connection limit, starving
+    // the *current* layer's own fetch and surfacing as a genuine
+    // "TypeError: Failed to fetch" even though nothing was really broken.
+    this._abortController = new AbortController();
 
     // UI callbacks
     this.onTimeChange   = null;
@@ -317,9 +331,26 @@ export class UgridOverlay {
     this.onLoadingChange?.(true);
     try {
       await this._loadMetadata();
-      if (this.mounted) this._render();
+      if (!this.mounted) return;
+
+      // One rAF buffer so a prior raster overlay's GL-context teardown (its
+      // destroy() runs synchronously, in the same tick useZarrMap constructs
+      // this overlay) settles before this deck.gl MapboxOverlay is wired into
+      // MapLibre's render loop. Same rAF buffer as SfincsRasterOverlay /
+      // NiueInundationOverlay / NiueSuitabilityOverlay use before their
+      // addLayer — those guard entering a raster overlay right after this one;
+      // this guards the reverse direction, entering this overlay right after
+      // one of those (e.g. switching from Vessel Suitability to a wave layer).
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      if (!this.mounted) return;
+      this.map.addControl(this.overlay);
+
+      this._render();
     } catch (err) {
-      if (this.mounted) this.onErrorChange?.(String(err));
+      // AbortError means destroy() cancelled this instance's own in-flight
+      // fetches (see _abortController) — expected on a fast layer switch,
+      // not a real failure, so it must never reach onErrorChange.
+      if (this.mounted && err.name !== 'AbortError') this.onErrorChange?.(String(err));
     } finally {
       // Guard: if destroyed mid-fetch the callback was already nulled by useZarrMap
       if (this.mounted) this.onLoadingChange?.(false);
@@ -339,20 +370,21 @@ export class UgridOverlay {
     if (this.dataset) return;
     const storeUrl = buildZarrUrl(this.config.datasetName, this.config.zarrBaseUrl);
     const extraDefs = this._pointVariableDefs();
+    const signal = this._abortController.signal;
 
     // Open all arrays + direction attrs in one round-trip batch
     const [lonArr, latArr, faceArr, varArr, dirArr, dirAttrs, ...extraArrList] = await Promise.all([
-      openZarrArray(storeUrl, 'mesh_node_lon'),
-      openZarrArray(storeUrl, 'mesh_node_lat'),
-      openZarrArray(storeUrl, 'mesh_face_node'),
-      openZarrArray(storeUrl, this.config.variable),
+      openZarrArray(storeUrl, 'mesh_node_lon', signal),
+      openZarrArray(storeUrl, 'mesh_node_lat', signal),
+      openZarrArray(storeUrl, 'mesh_face_node', signal),
+      openZarrArray(storeUrl, this.config.variable, signal),
       this.config.directionVariable
-        ? openZarrArray(storeUrl, this.config.directionVariable).catch(() => null)
+        ? openZarrArray(storeUrl, this.config.directionVariable, signal).catch(() => null)
         : Promise.resolve(null),
       this.config.directionVariable
-        ? fetchZarrAttrs(storeUrl, this.config.directionVariable)
+        ? fetchZarrAttrs(storeUrl, this.config.directionVariable, signal)
         : Promise.resolve(null),
-      ...extraDefs.map(({ name }) => openZarrArray(storeUrl, name).catch(() => null)),
+      ...extraDefs.map(({ name }) => openZarrArray(storeUrl, name, signal).catch(() => null)),
     ]);
     this.variableArr = varArr;
     this.directionArr = dirArr;
@@ -371,7 +403,7 @@ export class UgridOverlay {
       : Array.from(faceData);
     // UGRID spec: start_index=1 means 1-based, 0 means 0-based (default).
     // Don't sample — some meshes have no node-0 face; check the .zattrs instead.
-    const faceAttrs = await fetchZarrAttrs(storeUrl, 'mesh_face_node');
+    const faceAttrs = await fetchZarrAttrs(storeUrl, 'mesh_face_node', signal);
     const startIndex = faceAttrs?.start_index ?? 0;
     const offset = startIndex > 0 ? startIndex : 0;
     const triangles = offset > 0 ? indices.map((v) => v - offset) : indices;
@@ -403,7 +435,7 @@ export class UgridOverlay {
 
     // Generate ISO time labels from time/.zattrs — zarr.js 0.6.3 cannot read <i8 (int64),
     // so we read only the metadata and assume hourly uniform steps from the units base date.
-    const timeAttrs = await fetchZarrAttrs(storeUrl, 'time');
+    const timeAttrs = await fetchZarrAttrs(storeUrl, 'time', signal);
     const units = timeAttrs?.units ?? '';
     const m = units.match(/hours\s+since\s+(.+)/i);
     const baseDate = m ? new Date(m[1].trim().replace(' ', 'T') + (m[1].includes('Z') ? '' : 'Z')) : null;
@@ -420,8 +452,8 @@ export class UgridOverlay {
     };
     this.nodeIndex = buildNodeSpatialIndex(nodes, bounds);
 
-    if (!this.didAutoFit) {
-      this.didAutoFit = true;
+    if (!this.autoFitState.done) {
+      this.autoFitState.done = true;
       this.map.fitBounds(this.dataset.bounds, { padding: 30, animate: false });
     }
     const label0 = this.timeLabels[0] ?? '';
@@ -726,7 +758,13 @@ export class UgridOverlay {
       const label = this.timeLabels?.[this.timeIndex] ?? `Timestep ${this.timeIndex + 1}`;
       this.onTimeChange?.(label, this.timeIndex, ds.timeCount - 1);
     } catch (err) {
-      this.onErrorChange?.(String(err));
+      // A superseded request (layer/timestep changed while this fetch was
+      // in flight, or the overlay was torn down for a layer switch) throwing
+      // late must not paint an error over whatever replaced it — mirrors the
+      // guard SfincsRasterOverlay/NiueSuitabilityOverlay already apply.
+      if (this.mounted && requestId === this.renderRequestId && err.name !== 'AbortError') {
+        this.onErrorChange?.(String(err));
+      }
     } finally {
       if (requestId === this.renderRequestId) this.onLoadingChange?.(false);
     }
@@ -831,6 +869,7 @@ export class UgridOverlay {
 
   destroy() {
     this.mounted = false;
+    this._abortController.abort();
     this.stopPlayback();
     if (this.renderTimeout) clearTimeout(this.renderTimeout);
     this.overlay.setProps({ layers: [] });
