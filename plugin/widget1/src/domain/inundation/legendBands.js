@@ -157,8 +157,28 @@ export const buildInundationLegendBands = ({
     }
   });
 
+  // Hard-stop gradient built from each category's own edited colour/threshold —
+  // so the bar always matches what the raster is actually showing on the map,
+  // instead of a static depth ramp that never reflects edits (see legend
+  // staleness bug: bar looked frozen while tick swatches updated fine).
+  const sortedCategories = [...categories].sort((a, b) => a.thresholdM - b.thresholdM);
+  const segments = [];
+  if (sortedCategories[0].thresholdM > minVal) {
+    segments.push({ start: minVal, end: sortedCategories[0].thresholdM, color: 'transparent' });
+  }
+  sortedCategories.forEach((category, i) => {
+    const end = i + 1 < sortedCategories.length ? sortedCategories[i + 1].thresholdM : maxVal;
+    segments.push({ start: category.thresholdM, end, color: category.color });
+  });
+  const gradientStops = segments.map(({ start, end, color }) => {
+    const s = (((start - minVal) / span) * 100).toFixed(2);
+    const e = (((end - minVal) / span) * 100).toFixed(2);
+    return `${color} ${s}% ${e}%`;
+  });
+  const gradient = `linear-gradient(to top, ${gradientStops.join(', ')})`;
+
   return {
-    gradient: X_SST_GRADIENT,
+    gradient,
     ticks,
     tickBands,
     gradientMarkers,

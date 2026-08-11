@@ -19,7 +19,7 @@ import FancyIcon from './FancyIcon';
 import '../styles/fancyIcons.css';
 import InundationThresholdEditor from './InundationThresholdEditor';
 import InundationWindowControl from './InundationWindowControl';
-import { X_SST_GRADIENT, buildInundationLegendBands, buildBreakLegendConfig, parseLegendColorRange } from '../domain/inundation/legendBands';
+import { X_SST_GRADIENT, buildInundationLegendBands, buildBreakLegendConfig, buildContinuousLegendConfig, parseLegendColorRange } from '../domain/inundation/legendBands';
 import { getColormap } from '../lib/colormaps';
 
 
@@ -260,6 +260,16 @@ const ForecastApp = ({
       };
     }
 
+    if (varLower.includes('tm02') || varLower.includes('tpeak')) {
+      // Wave period (mean/peak) - continuous gradient sampled from the layer's
+      // own colormap so the legend always matches what UgridOverlay renders.
+      return buildContinuousLegendConfig({
+        colorRange: { min: layerData?.colorRange?.min ?? 0, max: layerData?.colorRange?.max ?? 20 },
+        colormapFn: getColormap(layerData?.colormap),
+        units: 's',
+      });
+    }
+
     if (varLower.includes('dirm')) {
       // Wave direction - Static compass (doesn't change with data)
       return {
@@ -270,7 +280,7 @@ const ForecastApp = ({
         ticks: [0, 90, 180, 270, 360]
       };
     }
-    
+
     return null;
   };
 

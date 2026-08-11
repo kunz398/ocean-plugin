@@ -80,6 +80,30 @@ export function buildBreakLegendConfig({ colorBreaks, colorLabels, colorRange, u
   return { gradient, min, max, units, ticks: colorBreaks, tickBands };
 }
 
+/**
+ * Build a continuous-gradient legend from a colorRange + colormap function.
+ * colormapFn must be the same function used by the renderer so colours match exactly.
+ * Returns the same shape as getLegendConfig so the existing legend JSX works unchanged.
+ */
+export function buildContinuousLegendConfig({ colorRange, colormapFn, units = '', stopCount = 12 }) {
+  const { min, max } = colorRange;
+  const range = max - min || 1;
+
+  const stops = Array.from({ length: stopCount }, (_, i) => {
+    const t = i / (stopCount - 1);
+    const [r, g, b] = colormapFn ? colormapFn(t) : [128, 128, 128];
+    return `rgb(${r},${g},${b}) ${(t * 100).toFixed(2)}%`;
+  });
+  const gradient = `linear-gradient(to top, ${stops.join(', ')})`;
+
+  const tickCount = 5;
+  const ticks = Array.from({ length: tickCount }, (_, i) =>
+    Number((min + (range * i) / (tickCount - 1)).toFixed(1))
+  );
+
+  return { gradient, min, max, units, ticks };
+}
+
 export const parseLegendColorRange = (rangeString) => {
   if (!rangeString) return null;
   const parts = rangeString.split(',');
@@ -157,8 +181,28 @@ export const buildInundationLegendBands = ({
     }
   });
 
+  // Hard-stop gradient built from each category's own edited colour/threshold —
+  // so the bar always matches what the raster is actually showing on the map,
+  // instead of a static depth ramp that never reflects edits (see legend
+  // staleness bug: bar looked frozen while tick swatches updated fine).
+  const sortedCategories = [...categories].sort((a, b) => a.thresholdM - b.thresholdM);
+  const segments = [];
+  if (sortedCategories[0].thresholdM > minVal) {
+    segments.push({ start: minVal, end: sortedCategories[0].thresholdM, color: 'transparent' });
+  }
+  sortedCategories.forEach((category, i) => {
+    const end = i + 1 < sortedCategories.length ? sortedCategories[i + 1].thresholdM : maxVal;
+    segments.push({ start: category.thresholdM, end, color: category.color });
+  });
+  const gradientStops = segments.map(({ start, end, color }) => {
+    const s = (((start - minVal) / span) * 100).toFixed(2);
+    const e = (((end - minVal) / span) * 100).toFixed(2);
+    return `${color} ${s}% ${e}%`;
+  });
+  const gradient = `linear-gradient(to top, ${gradientStops.join(', ')})`;
+
   return {
-    gradient: X_SST_GRADIENT,
+    gradient,
     ticks,
     tickBands,
     gradientMarkers,

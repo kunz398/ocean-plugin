@@ -670,7 +670,11 @@ export function useZarrMap({
     if (map.getSource(BASEMAP_LAYER_ID)) map.removeSource(BASEMAP_LAYER_ID);
     map.addSource(BASEMAP_LAYER_ID, option.source);
     const firstLayerId = map.getStyle()?.layers?.[0]?.id;
-    map.addLayer({ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_LAYER_ID }, firstLayerId);
+    // raster-fade-duration: 0 — otherwise MapLibre cross-fades the new tiles
+    // against the just-destroyed previous source's tiles, and the next render
+    // tick throws (parentTile.texture is gone): "Cannot read properties of
+    // undefined (reading 'bind')" in draw_raster.
+    map.addLayer({ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_LAYER_ID, paint: { 'raster-fade-duration': 0 } }, firstLayerId);
   }, []);
 
   // ── capTime compatibility shim for ForecastApp/InundationWindowControl ─────
