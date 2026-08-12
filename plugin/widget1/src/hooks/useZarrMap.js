@@ -110,6 +110,7 @@ export function useZarrMap({
   setShowBottomCanvas,
   inundationCategories = null,
   minVisibleDepth = null,
+  inundationRenderMode = 'continuous',
   rangeWindow = null,
   // 'off' | 'particles' | 'particles+raster'
   waveParticleMode = 'off',
@@ -159,7 +160,7 @@ export function useZarrMap({
   // Keep latest callback params in refs to avoid stale closures in map event listeners
   const cbRef = useRef({});
   cbRef.current = {
-    setBottomCanvasData, setShowBottomCanvas, inundationCategories, minVisibleDepth, rangeWindow, selectedLayerId,
+    setBottomCanvasData, setShowBottomCanvas, inundationCategories, minVisibleDepth, inundationRenderMode, rangeWindow, selectedLayerId,
     opacity, sliderIndex, swellSourcesEnabled, selectedVessel,
     landingAreaPickMode, onLandingAreaPick,
     routePickMode, onRoutePointPick,
@@ -361,6 +362,7 @@ export function useZarrMap({
           opacity,
           inundationCategories: cbRef.current.inundationCategories,
           minVisibleDepth: cbRef.current.minVisibleDepth,
+          inundationRenderMode: cbRef.current.inundationRenderMode,
         })
       : layerCfg.sourceType === 'niue-suitability-raster'
       ? new NiueSuitabilityOverlay(map, {
@@ -582,11 +584,11 @@ export function useZarrMap({
   useEffect(() => {
     const ov = overlayRef.current;
     if (ov instanceof SfincsRasterOverlay) {
-      ov.updateConfig({ rangeWindow, inundationCategories, minVisibleDepth });
+      ov.updateConfig({ rangeWindow, inundationCategories, minVisibleDepth, inundationRenderMode });
     } else if (ov instanceof NiueInundationOverlay) {
-      ov.updateConfig({ inundationCategories, minVisibleDepth });
+      ov.updateConfig({ inundationCategories, minVisibleDepth, inundationRenderMode });
     }
-  }, [rangeWindow, inundationCategories, minVisibleDepth]);
+  }, [rangeWindow, inundationCategories, minVisibleDepth, inundationRenderMode]);
 
   // ── suitability vessel class ──────────────────────────────────────────────
   useEffect(() => {

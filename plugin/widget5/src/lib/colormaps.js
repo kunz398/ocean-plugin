@@ -59,6 +59,23 @@ function xSst(t) {
   return X_SST_STOPS[X_SST_STOPS.length - 1][1];
 }
 
+// Turbo (Google AI's improved rainbow colormap) — approximate control points.
+// Matches the palette zarr-api uses for render_mode=continuous PNG tiles, so
+// the legend gradient visually tracks the map instead of a mismatched palette.
+const turbo = stopsColormap([
+  [0.00, [ 48,  18,  59]],  // deep violet
+  [0.10, [ 71,  60, 189]],  // indigo
+  [0.20, [ 48, 116, 227]],  // blue
+  [0.30, [ 26, 168, 219]],  // cyan-blue
+  [0.40, [ 33, 205, 170]],  // teal-green
+  [0.50, [ 95, 219,  90]],  // green
+  [0.60, [175, 216,  46]],  // yellow-green
+  [0.70, [237, 176,  32]],  // amber
+  [0.80, [244, 111,  30]],  // orange
+  [0.90, [220,  55,  22]],  // red-orange
+  [1.00, [122,   4,   3]],  // dark red
+]);
+
 // ColorBrewer 11-class Spectral — matches div-Spectral used on the WMS layer and sidebar legend
 const spectral = stopsColormap([
   [0.0,  [158,   1,  66]],
@@ -134,6 +151,7 @@ export function getColormap(name, numBands = null) {
   else if (n === 'wave-height' || n === 'waveheight') fn = waveHeight;
   else if (n === 'wave-period' || n === 'waveperiod') fn = wavePeriod;
   else if (n === 'ylorrd' || n === 'yl-or-rd') fn = ylOrRd;
+  else if (n === 'turbo') fn = turbo;
   else fn = jet;
   return numBands ? quantize(fn, numBands) : fn;
 }

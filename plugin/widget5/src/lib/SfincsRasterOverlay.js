@@ -29,7 +29,7 @@ const PLACEHOLDER = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAAL
 
 // Fallback continuous colormap when no valid threshold categories are configured
 // (mirrors the backend's turbo-colormap fallback for render_mode=continuous).
-const FALLBACK_COLORMAP = getColormap('jet');
+const FALLBACK_COLORMAP = getColormap('turbo');
 
 const FRAME_CACHE_LIMIT = 10;
 
@@ -78,6 +78,7 @@ export class SfincsRasterOverlay {
     this._timeIndex = 0;
     this._rangeWindow  = null;
     this._categories   = config.inundationCategories ?? null;
+    this._renderMode   = config.inundationRenderMode ?? 'continuous';
     this._timesteps    = [];
     this._destroyed    = false;
     this._sourceReady  = false;
@@ -241,8 +242,12 @@ export class SfincsRasterOverlay {
       vmin: String(this._vmin),
       vmax: String(this._vmax),
     });
-    const tp = serializeThresholdParams(this._categories);
-    if (tp) Object.entries(tp).forEach(([k, v]) => params.set(k, v));
+    if (this._renderMode === 'continuous') {
+      params.set('render_mode', 'continuous');
+    } else {
+      const tp = serializeThresholdParams(this._categories);
+      if (tp) Object.entries(tp).forEach(([k, v]) => params.set(k, v));
+    }
     return `${this._apiBase}/range-max/raster-png?${params}`;
   }
 
@@ -352,7 +357,9 @@ export class SfincsRasterOverlay {
       // across opacity changes instead of needing a full re-render.
       const canvas = renderToCanvas(
         values, this._rows, this._cols, FALLBACK_COLORMAP,
-        this._vmin, this._vmax, /* opacity */ 1, thresholdBands(this._categories), this._vmin
+        this._vmin, this._vmax, /* opacity */ 1,
+        this._renderMode === 'continuous' ? null : thresholdBands(this._categories),
+        this._vmin
       );
       this._cacheFrame(frameIndex, canvas);
       this._applyCanvasFrame(canvas, coords, frameIndex);
@@ -425,12 +432,15 @@ export class SfincsRasterOverlay {
     } catch (_) {}
   }
 
-  updateConfig({ rangeWindow, inundationCategories, minVisibleDepth } = {}) {
+  updateConfig({ rangeWindow, inundationCategories, minVisibleDepth, inundationRenderMode } = {}) {
     if (rangeWindow          !== undefined) this._rangeWindow = rangeWindow;
-    const recolor = inundationCategories !== undefined || (minVisibleDepth !== undefined && minVisibleDepth !== null);
+    const recolor = inundationCategories !== undefined
+      || (minVisibleDepth !== undefined && minVisibleDepth !== null)
+      || (inundationRenderMode !== undefined && inundationRenderMode !== this._renderMode);
     if (inundationCategories !== undefined) this._categories  = inundationCategories;
     if (minVisibleDepth      !== undefined && minVisibleDepth !== null) this._vmin = minVisibleDepth;
-    // Cached canvases were colored with the old thresholds/floor — drop them.
+    if (inundationRenderMode !== undefined) this._renderMode = inundationRenderMode;
+    // Cached canvases were colored with the old thresholds/floor/render mode — drop them.
     if (recolor) this._frameCache.clear();
     if (!this._sourceReady) return;
 

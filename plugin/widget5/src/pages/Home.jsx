@@ -40,6 +40,10 @@ function CookIslandsForecast() {
   const [terrainEnabled, setTerrainEnabled] = useState(false);
   const [floodDisplayMode, setFloodDisplayMode] = useState('2d');
   const [flood3dElevScale, setFlood3dElevScale] = useState(FLOOD_3D_CONFIG.elevationScale ?? 6);
+  // 'bands' | 'continuous' — lets the inundation layer render as a smooth
+  // depth gradient (default, matching the wave/period forecast layers) or
+  // the user's edited hazard bands, switchable from the threshold editor.
+  const [inundationRenderMode, setInundationRenderMode] = useState('continuous');
 
   // ── canvas visibility ────────────────────────────────────────────────────
   const [showBottomCanvas, setShowBottomCanvas] = useState(false);
@@ -89,6 +93,7 @@ function CookIslandsForecast() {
     setShowBottomCanvas,
     inundationCategories: inundationThresholds.lastValidCategories,
     minVisibleDepth: inundationThresholds.minVisibleDepth,
+    inundationRenderMode,
     rangeWindow,
     terrainEnabled,
     terrainConfig: MAP_TERRAIN_CONFIG,
@@ -151,6 +156,8 @@ function CookIslandsForecast() {
         minIndex={0}
         isBuffering={false}
         inundationThresholds={inundationThresholds}
+        inundationRenderMode={inundationRenderMode}
+        setInundationRenderMode={setInundationRenderMode}
         rangeWindow={rangeWindow}
         setRangeWindow={setRangeWindow}
         fitBounds={fitBounds}

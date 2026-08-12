@@ -192,6 +192,10 @@ function Home() {
   }, [showBuoyCanvas]);
 
   const inundationThresholds = useInundationThresholds();
+  // 'bands' | 'continuous' — lets the inundation layer render as a smooth
+  // depth gradient (default, matching the wave/period forecast layers) or
+  // the user's edited hazard bands, switchable from the threshold editor.
+  const [inundationRenderMode, setInundationRenderMode] = useState('continuous');
 
   const {
     mapRef,
@@ -216,6 +220,7 @@ function Home() {
     thresholds: null,
     inundationCategories: inundationThresholds.categories,
     minVisibleDepth: inundationThresholds.minVisibleDepth,
+    inundationRenderMode,
     riskEnabled: activeLayers?.riskPoints !== false,
     setBottomCanvasData,
     setShowBottomCanvas,
@@ -591,6 +596,8 @@ function Home() {
       <ModernHeader capTime={capTime} timeDisplayZone={timeDisplayZone} />
       <ForecastApp
         inundationThresholds={inundationThresholds}
+        inundationRenderMode={inundationRenderMode}
+        setInundationRenderMode={setInundationRenderMode}
         WAVE_FORECAST_LAYERS={allLayers}
         ALL_LAYERS={allLayers}
         selectedWaveForecast={selectedWaveForecast}

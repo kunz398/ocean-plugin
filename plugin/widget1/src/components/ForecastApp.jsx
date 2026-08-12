@@ -9,7 +9,7 @@ import BasemapSwitcher from './BasemapSwitcher';
 import ForecastTimeline from './ForecastTimeline';
 import InundationThresholdEditor from './InundationThresholdEditor';
 import { isInundationLayer } from '../config/layerConfig';
-import { buildBreakLegendConfig, buildInundationLegendBands } from '../domain/inundation/legendBands';
+import { buildBreakLegendConfig, buildInundationLegendBands, buildContinuousLegendConfig } from '../domain/inundation/legendBands';
 import { getColormap } from '../lib/colormaps';
 import {
   VESSEL_CLASSES,
@@ -331,6 +331,8 @@ const ForecastApp = ({
   onRunScenario,
   onRunAllScenarios,
   inundationThresholds,
+  inundationRenderMode,
+  setInundationRenderMode,
   oceanStations = [],
   onOceanStationSelect,
   timeDisplayZone,
@@ -534,6 +536,13 @@ const ForecastApp = ({
     }
     
     if (varLower.includes('inun')) {
+      if (inundationRenderMode === 'continuous') {
+        return buildContinuousLegendConfig({
+          colorRange: { min: layerData?.colorRange?.min ?? colorRange?.min ?? 0.05, max: layerData?.colorRange?.max ?? colorRange?.max ?? 6.0 },
+          colormapFn: getColormap('turbo'),
+          units: 'm',
+        });
+      }
       // Bands, colors, and the visible-depth cutoff come from the live
       // inundationThresholds editor state — not the raw WMS colorscalerange —
       // so the legend always matches what the raster/chart are actually showing.
@@ -1162,12 +1171,12 @@ const ForecastApp = ({
               />
             </ControlGroup>
 
-            <ControlGroup
-              icon={<FancyIcon icon={FastForward} animationType="bounce" color="#ff9800" />}
-              title={UI_CONFIG.SECTIONS.FORECAST_TIME.title}
-              ariaLabel={UI_CONFIG.SECTIONS.FORECAST_TIME.ariaLabel}
-            >
-              {showTimelineInPanel && (
+            {showTimelineInPanel && (
+              <ControlGroup
+                icon={<FancyIcon icon={FastForward} animationType="bounce" color="#ff9800" />}
+                title={UI_CONFIG.SECTIONS.FORECAST_TIME.title}
+                ariaLabel={UI_CONFIG.SECTIONS.FORECAST_TIME.ariaLabel}
+              >
                 <ForecastTimeline
                   inline
                   sliderIndex={sliderIndex}
@@ -1187,10 +1196,9 @@ const ForecastApp = ({
                   showInPanel={showTimelineInPanel}
                   onTogglePanel={() => setShowTimelineInPanel((v) => !v)}
                 />
-              )}
 
-              {/* ✅ Warm-up Period Notice */}
-              {MARINE_CONFIG.SHOW_WARMUP_NOTICE && capTime.warmupSkipped && (
+                {/* ✅ Warm-up Period Notice */}
+                {MARINE_CONFIG.SHOW_WARMUP_NOTICE && capTime.warmupSkipped && (
                 <div style={{
                   marginTop: '0.75rem',
                   padding: '0.5rem 0.75rem',
@@ -1208,13 +1216,14 @@ const ForecastApp = ({
                     Showing reliable forecast data (excluding {capTime.warmupDays}-day model initialization)
                   </span>
                 </div>
-              )}
-            </ControlGroup>
+                )}
+              </ControlGroup>
+            )}
 
             {isInundationSelected && (
               <ControlGroup
                 icon={<FancyIcon icon={SlidersHorizontal} animationType="pulse" color="#90caf9" />}
-                title="Inundation Thresholds"
+                title="Dynamic Inundation Visualization"
                 ariaLabel="Inundation threshold configuration"
               >
                 <div className="inundation-threshold-trigger">
@@ -1563,6 +1572,8 @@ const ForecastApp = ({
         resetToDefaults={inundationThresholds.resetToDefaults}
         exportJson={inundationThresholds.exportJson}
         importJson={inundationThresholds.importJson}
+        renderMode={inundationRenderMode}
+        setRenderMode={setInundationRenderMode}
       />
 
       <AdvisoryPdfModal

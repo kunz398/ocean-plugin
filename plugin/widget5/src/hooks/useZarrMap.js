@@ -85,6 +85,7 @@ export function useZarrMap({
   setShowBottomCanvas,
   inundationCategories = null,
   minVisibleDepth = null,
+  inundationRenderMode = 'continuous',
   rangeWindow = null,
   playSpeedMs = 700,
   terrainEnabled = false,
@@ -118,7 +119,7 @@ export function useZarrMap({
 
   // Keep latest callback params in refs to avoid stale closures in map event listeners
   const cbRef = useRef({});
-  cbRef.current = { setBottomCanvasData, setShowBottomCanvas, inundationCategories, minVisibleDepth, rangeWindow, selectedLayerId, opacity, flood3dElevScale, sliderIndex };
+  cbRef.current = { setBottomCanvasData, setShowBottomCanvas, inundationCategories, minVisibleDepth, inundationRenderMode, rangeWindow, selectedLayerId, opacity, flood3dElevScale, sliderIndex };
 
   const overlayRefR = useRef(overlayRef);
   overlayRefR.current = overlayRef;
@@ -270,6 +271,7 @@ export function useZarrMap({
             opacity,
             inundationCategories: cbRef.current.inundationCategories,
             minVisibleDepth: cbRef.current.minVisibleDepth,
+            inundationRenderMode: cbRef.current.inundationRenderMode,
           })
         : new ZarrOverlay(map, { ...layerCfg, opacity, thresholds });
 
@@ -347,9 +349,9 @@ export function useZarrMap({
   useEffect(() => {
     const ov = overlayRef.current;
     if (ov instanceof SfincsRasterOverlay) {
-      ov.updateConfig({ rangeWindow, inundationCategories, minVisibleDepth });
+      ov.updateConfig({ rangeWindow, inundationCategories, minVisibleDepth, inundationRenderMode });
     }
-  }, [rangeWindow, inundationCategories, minVisibleDepth]);
+  }, [rangeWindow, inundationCategories, minVisibleDepth, inundationRenderMode]);
 
   // ── optional MapLibre terrain ────────────────────────────────────────────
   useEffect(() => {

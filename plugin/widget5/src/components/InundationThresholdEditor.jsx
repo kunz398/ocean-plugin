@@ -40,6 +40,8 @@ export default function InundationThresholdEditor({
   resetToDefaults,
   exportJson,
   importJson,
+  renderMode,
+  setRenderMode,
 }) {
   const [saveFlash, setSaveFlash] = useState(false);
   const [localSaveError, setLocalSaveError] = useState(null);
@@ -210,6 +212,25 @@ export default function InundationThresholdEditor({
               />
               <span className="ite-cutoff-row__unit">m</span>
             </div>
+          </div>
+          <div className="ite-palette-row">
+            <div className="ite-palette-row__meta">
+              <label className="ite-palette-row__label" htmlFor="inundation-view-mode-select">Map view</label>
+              <span className="ite-palette-row__desc">
+                {renderMode === 'continuous'
+                  ? 'Smooth depth gradient across the full range.'
+                  : 'Discrete hazard bands using the categories below.'}
+              </span>
+            </div>
+            <select
+              id="inundation-view-mode-select"
+              className="ite-palette-select"
+              value={renderMode}
+              onChange={(e) => setRenderMode?.(e.target.value)}
+            >
+              <option value="continuous">Continuous gradient</option>
+              <option value="bands">Hazard bands (below)</option>
+            </select>
           </div>
           <div className="ite-palette-row">
             <div className="ite-palette-row__meta">

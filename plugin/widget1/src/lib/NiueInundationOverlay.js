@@ -42,6 +42,7 @@ export class NiueInundationOverlay {
     this._opacity    = config.opacity ?? 0.75;
     this._timeIndex  = 0;
     this._categories  = config.inundationCategories ?? null;
+    this._renderMode  = config.inundationRenderMode ?? 'continuous';
     this._timesteps   = [];
     this._destroyed   = false;
     this._sourceReady = false;
@@ -141,8 +142,12 @@ export class NiueInundationOverlay {
       vmin: String(this._vmin),
       vmax: String(this._vmax),
     });
-    const tp = serializeThresholdParams(this._categories);
-    if (tp) Object.entries(tp).forEach(([k, v]) => params.set(k, v));
+    if (this._renderMode === 'continuous') {
+      params.set('render_mode', 'continuous');
+    } else {
+      const tp = serializeThresholdParams(this._categories);
+      if (tp) Object.entries(tp).forEach(([k, v]) => params.set(k, v));
+    }
     return `${this._apiBase}/niue/inundation/tiles/${timeIndex}/{z}/{x}/{y}.png?${params}`;
   }
 
@@ -171,9 +176,10 @@ export class NiueInundationOverlay {
 
   // Called by useZarrMap when inundationCategories/minVisibleDepth change. No
   // range-window support yet — Niue's API has no range-max endpoint (unlike Cook Islands).
-  updateConfig({ inundationCategories, minVisibleDepth } = {}) {
+  updateConfig({ inundationCategories, minVisibleDepth, inundationRenderMode } = {}) {
     if (inundationCategories !== undefined) this._categories = inundationCategories;
     if (minVisibleDepth !== undefined && minVisibleDepth !== null) this._vmin = minVisibleDepth;
+    if (inundationRenderMode !== undefined) this._renderMode = inundationRenderMode;
     this._updateTiles();
   }
 
