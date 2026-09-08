@@ -8,6 +8,7 @@ import { SfincsRasterOverlay } from '../lib/SfincsRasterOverlay';
 import { NiueInundationOverlay } from '../lib/NiueInundationOverlay';
 import { NiueSuitabilityOverlay, SUITABILITY_HAZARD_COLORS } from '../lib/NiueSuitabilityOverlay';
 import { WaveParticleOverlay } from '../lib/WaveParticleOverlay';
+import { CurrentsParticleOverlay } from '../lib/CurrentsParticleOverlay';
 import { SwellSourceArcOverlay } from '../lib/SwellSourceArcOverlay';
 import { findLayerById } from '../lib/mapLayersConfig';
 import { BASEMAP_LAYER_ID, BASEMAP_OPTIONS } from '../config/basemapConfig';
@@ -26,7 +27,9 @@ const ESRI_SAT_STYLE = {
       tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
       tileSize: 256,
       attribution: 'Tiles © Esri',
-      maxzoom: 19,
+      // See basemapConfig.js's satellite source for why this is capped at 17,
+      // not 19 — real Esri imagery for Niue runs out around there.
+      maxzoom: 17,
     },
   },
   layers: [{ id: 'sat', type: 'raster', source: 'sat' }],
@@ -105,6 +108,9 @@ export function useZarrMap({
   playSpeedMs = 700,
   opacity = 0.75,
   thresholds = null,
+  // Depth in meters (e.g. -30), for 4-D (time, depth, lat, lon) zarr layers —
+  // ignored by every other overlay type (ugrid, sfincs-raster, etc.).
+  depth = null,
   riskEnabled = true,
   setBottomCanvasData,
   setShowBottomCanvas,
@@ -115,6 +121,7 @@ export function useZarrMap({
   // 'off' | 'particles' | 'particles+raster'
   waveParticleMode = 'off',
   particleQuality = 'balanced',
+  currentsParticlesEnabled = false,
   swellSourcesEnabled = false,
   selectedVessel = 'traditional_craft',
   landingAreaPickMode = false,
@@ -139,9 +146,11 @@ export function useZarrMap({
   // which instance currently holds it.
   const autoFitStateRef = useRef({ done: false });
   const particleOverlayRef = useRef(null);
+  const currentsParticleOverlayRef = useRef(null);
   const arcOverlayRef = useRef(null);
   const playIntervalRef = useRef(null);
   const pinMarkerRef = useRef(null);
+  const valuePopupRef = useRef(null);
   const routeWaypointMarkersRef = useRef([]);
   const routeLegLabelMarkersRef = useRef([]);
   const routeHoverPopupRef = useRef(null);
@@ -156,12 +165,16 @@ export function useZarrMap({
   const [error, setError] = useState(null);
   const [mapReady, setMapReady] = useState(false);
   const [overlayStats, setOverlayStats] = useState(null);
+  // Real depth levels (meters) reported by the active layer's overlay — only
+  // ZarrOverlay layers with a depth axis report this; null otherwise (e.g.
+  // wave/ugrid layers, or a zarr layer with no depth axis like sea surface height).
+  const [depthLevels, setDepthLevels] = useState(null);
 
   // Keep latest callback params in refs to avoid stale closures in map event listeners
   const cbRef = useRef({});
   cbRef.current = {
     setBottomCanvasData, setShowBottomCanvas, inundationCategories, minVisibleDepth, inundationRenderMode, rangeWindow, selectedLayerId,
-    opacity, sliderIndex, swellSourcesEnabled, selectedVessel,
+    opacity, sliderIndex, swellSourcesEnabled, selectedVessel, depth,
     landingAreaPickMode, onLandingAreaPick,
     routePickMode, onRoutePointPick,
   };
@@ -295,6 +308,8 @@ export function useZarrMap({
       }
       particleOverlayRef.current?.destroy();
       particleOverlayRef.current = null;
+      currentsParticleOverlayRef.current?.destroy();
+      currentsParticleOverlayRef.current = null;
       arcOverlayRef.current?.destroy();
       arcOverlayRef.current = null;
       clearRouteMapMarkers();
@@ -319,7 +334,25 @@ export function useZarrMap({
     if (!mapReady) return;
 
     const layerCfg = findLayerById(selectedLayerId);
-    if (!layerCfg) return;
+    if (!layerCfg) {
+      // selectedLayerId is null or doesn't resolve to a known layer — tear
+      // down whatever overlay was showing rather than leaving it stranded on
+      // the map (e.g. briefly, between the Wave and Current tabs' layer ids).
+      if (overlayRef.current) {
+        overlayRef.current.onLoadingChange = null;
+        overlayRef.current.onTimeChange = null;
+        overlayRef.current.onErrorChange = null;
+        overlayRef.current.onStatsChange = null;
+        overlayRef.current.onDepthLevelsChange = null;
+        overlayRef.current.destroy();
+        overlayRef.current = null;
+      }
+      setLoading(false);
+      setOverlayStats(null);
+      setError(null);
+      setDepthLevels(null);
+      return;
+    }
 
     if (layerCfg.type === 'pending-adapter') {
       if (overlayRef.current) {
@@ -340,6 +373,7 @@ export function useZarrMap({
       prev.onTimeChange = null;
       prev.onErrorChange = null;
       prev.onStatsChange = null;
+      prev.onDepthLevelsChange = null;
       prev.destroy();
       overlayRef.current = null;
     }
@@ -370,11 +404,13 @@ export function useZarrMap({
           opacity,
           vessel: cbRef.current.selectedVessel || layerCfg.defaultVessel,
         })
-      : new ZarrOverlay(map, { ...layerCfg, opacity, thresholds });
+      : new ZarrOverlay(map, { ...layerCfg, opacity, thresholds, depth: cbRef.current.depth });
 
+    setDepthLevels(null);
     ov.onTimeChange = (_label, _idx, maxIdx) => setTimeCount(maxIdx + 1);
     ov.onLoadingChange = setLoading;
     ov.onErrorChange = setError;
+    ov.onDepthLevelsChange = setDepthLevels;
     ov.onStatsChange = (min, max, units, extra = {}) => {
       setOverlayStats({
         min,
@@ -431,6 +467,14 @@ export function useZarrMap({
   useEffect(() => {
     overlayRef.current?.setTimeIndex(sliderIndex);
   }, [sliderIndex]);
+
+  // ── depth → overlay ───────────────────────────────────────────────────────
+  // Updates the active layer's depth level in place — no-op on overlay types
+  // (or zarr variables) with no depth axis, since only ZarrOverlay exposes setDepth.
+  useEffect(() => {
+    overlayRef.current?.setDepth?.(depth);
+    currentsParticleOverlayRef.current?.setDepth(depth);
+  }, [depth]);
 
   // ── opacity ───────────────────────────────────────────────────────────────
   // In 'particles' mode, dim the raster so particles dominate.
@@ -528,6 +572,7 @@ export function useZarrMap({
         quality:      particleQuality,
         opacity:      cbRef.current.opacity,
       });
+      console.log(pov)
       pov.onErrorChange = (msg) => console.warn('[WaveParticleOverlay]', msg);
       particleOverlayRef.current = pov;
       // Sync to the current slider position immediately
@@ -549,6 +594,52 @@ export function useZarrMap({
   // ── sync particle time index ──────────────────────────────────────────────
   useEffect(() => {
     particleOverlayRef.current?.setTimeIndex(sliderIndex);
+  }, [sliderIndex]);
+
+  // ── currents particle overlay lifecycle ──────────────────────────────────
+  // Only meaningful for the Velocity layer (the only one with u/v components) —
+  // switching to Temperature/Salinity/Sea Surface Height, or toggling the
+  // "Show particles" switch off, tears it down the same way wave particles do.
+  useEffect(() => {
+    const map = mapInstance.current;
+    const layer = findLayerById(selectedLayerId);
+    const isVelocity = layer?.type === 'zarr' && layer.value === 'velocity';
+
+    if (currentsParticleOverlayRef.current && (!currentsParticlesEnabled || !isVelocity)) {
+      currentsParticleOverlayRef.current.destroy();
+      currentsParticleOverlayRef.current = null;
+    }
+
+    if (!map || !currentsParticlesEnabled || !isVelocity) return;
+
+    if (!currentsParticleOverlayRef.current) {
+      // Matches niu_current's own windAnimation config for this exact
+      // dataset (layers.config.ts, "croco-sea-velocity").
+      const cpo = new CurrentsParticleOverlay(map, {
+        datasetName: layer.datasetName,
+        zarrBaseUrl: layer.zarrBaseUrl,
+        depth: cbRef.current.depth,
+        speedFactor: 0.35,
+        particleCount: 2000,
+        particleSize: 2.6,
+        minSpeed: 0,
+        maxSpeed: 0.8,
+      });
+      cpo.onErrorChange = (msg) => console.warn('[CurrentsParticleOverlay]', msg);
+      currentsParticleOverlayRef.current = cpo;
+      cpo.setTimeIndex(sliderIndex);
+    }
+
+    return () => {
+      // Only destroy on unmount — the explicit disable/layer-change branch
+      // above handles the user turning the feature off mid-session.
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentsParticlesEnabled, selectedLayerId]);
+
+  // ── sync currents particle time index ────────────────────────────────────
+  useEffect(() => {
+    currentsParticleOverlayRef.current?.setTimeIndex(sliderIndex);
   }, [sliderIndex]);
 
   // ── swell source arc overlay lifecycle ───────────────────────────────────
@@ -729,6 +820,11 @@ export function useZarrMap({
       return;
     }
 
+    if (layerCfg.type === 'zarr') {
+      probeCurrentsPoint(map, lng, lat, layerCfg);
+      return;
+    }
+
     if (!ov?.getTimeseriesAtPoint) return;
     addPinMarker(lng, lat, map);
     const isInundationLayer = layerCfg.sourceType === 'sfincs-raster' || layerCfg.sourceType === 'niue-inundation-raster' || layerCfg.heightVariable === 'h' || layerCfg.variable === 'h';
@@ -803,7 +899,98 @@ export function useZarrMap({
 
   function removePinMarker() {
     if (pinMarkerRef.current) { pinMarkerRef.current.remove(); pinMarkerRef.current = null; }
+    removeValuePopup();
     arcOverlayRef.current?.clear();
+  }
+
+  // Shared by a direct map click and by "go to coordinates" (typed into the
+  // panel's coordinate readout) — both drop the pin, open the currents
+  // details panel, and show the instant value popup for the same point.
+  function probeCurrentsPoint(map, lng, lat, layerCfg) {
+    const { setBottomCanvasData: setCB, setShowBottomCanvas: setSC } = cbRef.current;
+    addPinMarker(lng, lat, map);
+    // Sea Surface Height has no depth axis, so CurrentPointDetailsPanel has
+    // nothing to chart for it — skip opening the bottom canvas entirely
+    // rather than showing it just to display a "no charts" message. The
+    // value popup (below) still shows the SSH value + coordinates, which is
+    // still useful.
+    if (layerCfg.hasDepth) {
+      setCB({ mode: 'currents', lat, lng, layerCfg });
+      setSC(true);
+    } else {
+      // Close it if it was already open from a previous click on a different
+      // (chartable) layer — otherwise it'd keep showing that stale panel.
+      setSC(false);
+    }
+    showValuePopup(map, lng, lat, layerCfg, overlayRef.current?.getValueAtLngLat?.(lng, lat) ?? null);
+  }
+
+  // "Go to coordinates" — pans the camera there and opens the same probe a
+  // click would, without disturbing the current zoom. No-op outside the
+  // Current tab (selectedLayerId won't resolve to a 'zarr' layer).
+  function goToCurrentsPoint(lon, lat) {
+    const map = mapInstance.current;
+    const layerCfg = findLayerById(cbRef.current.selectedLayerId);
+    if (!map || !layerCfg || layerCfg.type !== 'zarr') return;
+    map.easeTo({ center: [lon, lat] });
+    probeCurrentsPoint(map, lon, lat, layerCfg);
+  }
+
+  // Instant value readout at the clicked point — reads whatever frame is
+  // already rendered (see ZarrOverlay.getValueAtLngLat), no network fetch.
+  // Mirrors niu_current's click popup (label, value, coordinates).
+  //
+  // Deliberately NOT a maplibregl.Popup: deck.gl's MapboxOverlay (used by
+  // ZarrOverlay) adds its own canvas inside the map container, and Chrome
+  // composites that WebGL canvas above anything maplibre mounts in the same
+  // container (Popups included) even though hit-testing still reports the
+  // popup as topmost — so it's clickable but invisible. niu_current hit this
+  // exact issue and works around it the same way: mount as a plain fixed
+  // element on <body>, entirely outside the map's stacking context, and
+  // reposition it manually on pan/zoom via map.project().
+  function showValuePopup(map, lng, lat, layerCfg, value) {
+    removeValuePopup();
+    const unitsSuffix = layerCfg.units ? ` (${layerCfg.units})` : '';
+    const coordStr = `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lng).toFixed(4)}°${lng >= 0 ? 'E' : 'W'}`;
+
+    const el = document.createElement('div');
+    el.style.cssText = [
+      'position:fixed', 'z-index:2147483647', 'min-width:120px',
+      'transform:translate(-50%,-100%)', 'background:#1a1f2e',
+      'border:1px solid #2d3748', 'border-radius:10px', 'padding:8px 12px',
+      'box-shadow:0 4px 14px rgba(0,0,0,0.4)', 'font-family:inherit',
+    ].join(';');
+    el.innerHTML = `
+      <button aria-label="Close" style="position:absolute;top:2px;right:6px;background:none;border:none;color:#94a3b8;font-size:15px;line-height:1;cursor:pointer;padding:2px;">×</button>
+      <p style="margin:0 0 2px;font-size:11px;font-weight:600;color:#e2e8f0;padding-right:12px;">${layerCfg.label}${unitsSuffix}</p>
+      <p style="margin:0;font-size:13px;color:#f1f5f9;">${value !== null && value !== undefined ? value.toFixed(2) : 'No data'}</p>
+      <p style="margin:4px 0 0;font-size:10px;color:#94a3b8;font-family:monospace;">${coordStr}</p>
+    `;
+    el.querySelector('button').addEventListener('click', removeValuePopup);
+
+    const reposition = () => {
+      const p = map.project([lng, lat]);
+      const mapRect = map.getContainer().getBoundingClientRect();
+      el.style.left = `${mapRect.left + p.x}px`;
+      el.style.top = `${mapRect.top + p.y - 14}px`;
+    };
+    reposition();
+    document.body.appendChild(el);
+    map.on('move', reposition);
+    map.on('resize', reposition);
+
+    valuePopupRef.current = {
+      el,
+      cleanup: () => { map.off('move', reposition); map.off('resize', reposition); },
+    };
+  }
+
+  function removeValuePopup() {
+    if (valuePopupRef.current) {
+      valuePopupRef.current.cleanup();
+      valuePopupRef.current.el.remove();
+      valuePopupRef.current = null;
+    }
   }
 
   function clearRouteMapMarkers() {
@@ -912,9 +1099,11 @@ export function useZarrMap({
     loading,
     error,
     overlayStats,
+    depthLevels,    // real depth values (meters) for the active layer, or null if it has none
     fitBounds,      // (islandBounds, options) → map.fitBounds with coord conversion
     setBasemap,     // (basemapId) → swap 'sat' raster source/layer in place
     removePinMarker,
+    goToCurrentsPoint, // (lon, lat) → pan camera there + open the same probe a click would (Current tab only)
     setShowContours: (enabled) => { overlayRef.current?.setShowContours?.(enabled); },
   };
 }

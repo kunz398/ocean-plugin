@@ -1,0 +1,497 @@
+/* Ocean-currents tab — layout & styling only. No behavior lives here; see
+   LayersPanel.jsx / Depth.jsx / TimeStep.jsx for the (currently static)
+   markup this styles. */
+
+.currents-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.currents-section__label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(210, 228, 255, 0.4);
+  margin-bottom: 0.5rem;
+}
+
+/* ---------- Layer list ---------- */
+
+.currents-layer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: rgba(6, 18, 32, 0.55);
+  border: 1px solid rgba(100, 180, 220, 0.16);
+  border-radius: 10px;
+  padding: 3px;
+}
+
+.currents-layer-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+.currents-layer-btn:hover:not(.currents-layer-btn--disabled) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.currents-layer-btn--active {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.currents-layer-btn--disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.currents-layer-btn__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dot-color, #7dd3fc);
+  flex-shrink: 0;
+}
+
+.currents-layer-btn--active .currents-layer-btn__dot {
+  box-shadow: 0 0 6px var(--dot-color, #7dd3fc);
+}
+
+.currents-layer-btn__label {
+  flex: 1;
+  font-size: 0.76rem;
+  color: rgba(210, 228, 255, 0.55);
+}
+
+.currents-layer-btn--active .currents-layer-btn__label {
+  font-weight: 600;
+  color: #e8f4ff;
+}
+
+.currents-layer-btn__unit {
+  font-size: 0.66rem;
+  color: rgba(210, 228, 255, 0.4);
+}
+
+/* ---------- Flow particles card ---------- */
+
+.currents-particles-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: rgba(6, 18, 32, 0.55);
+  border: 1px solid rgba(100, 180, 220, 0.16);
+  border-radius: 10px;
+  padding: 0.6rem 0.7rem;
+}
+
+.currents-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.currents-toggle-row__label {
+  font-size: 0.76rem;
+  color: #e8f4ff;
+}
+
+.currents-toggle-switch {
+  width: 32px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.currents-toggle-switch--on {
+  background: #34d399;
+}
+
+.currents-toggle-switch__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s ease;
+}
+
+.currents-toggle-switch--on .currents-toggle-switch__knob {
+  left: 16px;
+}
+
+.currents-particles-card__hint {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: rgba(210, 228, 255, 0.45);
+}
+
+/* ---------- Depth selector ---------- */
+
+.currents-depth {
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0d1b2a;
+  border: 1px solid rgba(100, 180, 220, 0.16);
+}
+
+.currents-depth__header {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.currents-depth__eyebrow {
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.3);
+  margin-bottom: 2px;
+}
+
+.currents-depth__value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.currents-depth__value {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #7dd3fc;
+}
+
+.currents-depth__unit {
+  font-size: 0.66rem;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.3);
+  margin-left: 2px;
+}
+
+.currents-depth__zone {
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.currents-depth__body {
+  position: relative;
+  height: 200px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.currents-depth__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.currents-depth__track {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.currents-depth__track-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: rgba(125, 211, 252, 0.18);
+}
+
+.currents-depth__cursor-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(125, 211, 252, 0.5);
+  pointer-events: none;
+}
+
+.currents-depth__cursor-dot {
+  position: absolute;
+  right: 12px;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: #7dd3fc;
+  pointer-events: none;
+}
+
+.currents-depth__tick {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.currents-depth__tick-line {
+  flex-shrink: 0;
+  width: 10px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.currents-depth__tick-line--active {
+  width: 16px;
+  background: #7dd3fc;
+}
+
+.currents-depth__tick-label {
+  font-size: 0.62rem;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.currents-depth__tick-label--active {
+  color: #7dd3fc;
+}
+
+/* ---------- Time step ---------- */
+
+.currents-timestep {
+  background: #0d1b2a;
+  border: 1px solid rgba(100, 180, 220, 0.16);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.currents-timestep__header {
+  padding: 7px 12px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.currents-timestep__time {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: #e2f0ff;
+}
+
+.currents-timestep__badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.currents-timestep__badge {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: #7dd3fc;
+  background: rgba(125, 211, 252, 0.12);
+  border-radius: 20px;
+  padding: 1px 6px;
+}
+
+.currents-timestep__depth-note {
+  font-size: 0.58rem;
+  color: rgba(255, 255, 255, 0.28);
+}
+
+.currents-timestep__ribbon-section {
+  padding: 7px 12px 0;
+}
+
+.currents-timestep__ribbon-label {
+  font-size: 0.56rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.18);
+  margin-bottom: 3px;
+}
+
+.currents-timestep__ribbon {
+  position: relative;
+  height: 64px;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: crosshair;
+  background: rgba(8, 28, 52, 0.9);
+}
+
+.currents-timestep__ribbon-wave {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(30, 80, 130, 0.25), rgba(30, 80, 130, 0.05));
+  clip-path: polygon(0% 60%, 8% 45%, 16% 65%, 24% 40%, 32% 58%, 40% 35%, 48% 55%, 56% 30%, 64% 52%, 72% 38%, 80% 60%, 88% 42%, 100% 55%, 100% 100%, 0% 100%);
+}
+
+.currents-timestep__cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1.5px;
+  background: #7dd3fc;
+  pointer-events: none;
+}
+
+.currents-timestep__buoy {
+  position: absolute;
+  top: 40%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: #7dd3fc;
+  border: 2px solid #0d1b2a;
+  pointer-events: none;
+}
+
+.currents-timestep__ticks {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  height: 14px;
+  margin-top: 2px;
+}
+
+.currents-timestep__tick {
+  width: 1px;
+  height: 60%;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.currents-timestep__tick--major {
+  height: 100%;
+  background: rgba(125, 211, 252, 0.4);
+}
+
+.currents-timestep__labels {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 2px 5px;
+}
+
+.currents-timestep__label {
+  font: inherit;
+  font-size: 0.58rem;
+  color: rgba(255, 255, 255, 0.22);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.currents-timestep__label:hover {
+  color: rgba(125, 211, 252, 0.7);
+}
+
+.currents-timestep__depth-row {
+  padding: 0 12px 7px;
+}
+
+.currents-timestep__depth-eyebrow {
+  font-size: 0.56rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.2);
+  margin-bottom: 3px;
+}
+
+.currents-timestep__depth-bars {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.currents-timestep__depth-bar {
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.currents-timestep__depth-bar--past {
+  background: #7dd3fc;
+}
+
+.currents-timestep__depth-bar--active {
+  height: 5px;
+  background: rgba(125, 211, 252, 0.7);
+}
+
+.currents-timestep__controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.currents-timestep__chip-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: #7dd3fc;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.currents-timestep__chip-btn--play {
+  width: 28px;
+  height: 28px;
+  background: rgba(125, 211, 252, 0.18);
+}
+
+.currents-timestep__speed-group {
+  display: flex;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.currents-timestep__speed-chip {
+  font-size: 0.58rem;
+  padding: 2px 5px;
+  border-radius: 20px;
+  border: none;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.currents-timestep__speed-chip--active {
+  background: rgba(125, 211, 252, 0.15);
+  color: #7dd3fc;
+}
+
+/* ---------- Model run footer ---------- */
+
+.currents-model-run {
+  font-size: 0.62rem;
+  color: rgba(255, 255, 255, 0.3);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}

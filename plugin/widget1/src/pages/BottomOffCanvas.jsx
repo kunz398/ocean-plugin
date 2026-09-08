@@ -8,6 +8,7 @@ import SuitabilityDetailsPanel from "../components/suitability/SuitabilityDetail
 import InundationTimeseries from "./InundationTimeseries";
 import LandingAreaDetailsPanel from "../components/landingArea/LandingAreaDetailsPanel";
 import RouteForecastPanel from "../components/route/RouteForecastPanel";
+import CurrentPointDetailsPanel from "../components/currents/CurrentPointDetailsPanel";
 
 // ---- Variables & config shared between modules ----
 const variableDefs = [
@@ -102,7 +103,7 @@ const tabLabels = [
 
 function BottomOffCanvas({
   show, onHide, data, currentSliderDate, timeDisplayZone, onTimeSelect, landingAreaTimeseries, seaLevelTimeseries, onRunRouteForecast,
-  suitabilityApiBase, currentTimeIndex,
+  suitabilityApiBase, currentTimeIndex, currentDepth, onGoToLocation,
   currentRouteInputs, currentModelRunStart,
   scenarioCount, onConfirmVesselSuggestion,
   departureSuggestionLoading, departureSuggestionProgress, departureSuggestionResult, departureSuggestionError,
@@ -113,6 +114,7 @@ function BottomOffCanvas({
   const isInundationMode = data?.mode === "inundation";
   const isLandingAreaMode = data?.mode === "landing-area";
   const isRouteForecastMode = data?.mode === "route-forecast";
+  const isCurrentsMode = data?.mode === "currents";
   const [height, setHeight] = useState(getDefaultHeight);
   const [activeTab, setActiveTab] = useState("tabular");
   const [perVariableData, setPerVariableData] = useState({});
@@ -165,7 +167,7 @@ function BottomOffCanvas({
   // Centralized network fetching
   useEffect(() => {
     let isMounted = true;
-    if (isRiskMode || isSuitabilityMode || isInundationMode || isLandingAreaMode || isRouteForecastMode) {
+    if (isRiskMode || isSuitabilityMode || isInundationMode || isLandingAreaMode || isRouteForecastMode || isCurrentsMode) {
       setLoading(false);
       setFetchError("");
       return;
@@ -220,7 +222,7 @@ function BottomOffCanvas({
       }
     })();
     return () => { isMounted = false; };
-  }, [data, isRiskMode, isSuitabilityMode, isInundationMode, isLandingAreaMode, isRouteForecastMode]);
+  }, [data, isRiskMode, isSuitabilityMode, isInundationMode, isLandingAreaMode, isRouteForecastMode, isCurrentsMode]);
 
   // Inundation-mode timeseries errors are dev/ops signal, not something to
   // alarm the end user with — log to console instead of the red banner this
@@ -297,7 +299,7 @@ function BottomOffCanvas({
       }}>
         {/* Custom CSS Tabs */}
         <div style={{ display: "flex", flex: 1, paddingTop: 10 }} role="tablist">
-          {!isRiskMode && !isSuitabilityMode && !isInundationMode && !isLandingAreaMode && !isRouteForecastMode && tabLabels.map(tab => (
+          {!isRiskMode && !isSuitabilityMode && !isInundationMode && !isLandingAreaMode && !isRouteForecastMode && !isCurrentsMode && tabLabels.map(tab => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
@@ -349,6 +351,8 @@ function BottomOffCanvas({
       }}>
         {isRiskMode
           ? <RiskDetailsPanel data={data} isDarkMode={isDarkMode} currentSliderDate={currentSliderDate} onTimeSelect={onTimeSelect} timeDisplayZone={timeDisplayZone} />
+          : isCurrentsMode
+          ? <CurrentPointDetailsPanel data={data} currentDepth={currentDepth} timeIndex={currentTimeIndex} isDarkMode={isDarkMode} onGoToLocation={onGoToLocation} />
           : isSuitabilityMode
           ? <SuitabilityDetailsPanel data={data} timeDisplayZone={timeDisplayZone} />
           : isLandingAreaMode

@@ -1,0 +1,161 @@
+.currents-point-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  height: 100%;
+  min-height: 0;
+}
+
+.currents-point-panel__coords {
+  font-family: monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  opacity: 0.7;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.currents-point-panel__coords--editing {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: default;
+}
+
+.currents-point-panel__coord-input {
+  width: 5.5rem;
+  font-family: monospace;
+  font-size: 0.72rem;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 4px;
+  padding: 0.15rem 0.35rem;
+  color: inherit;
+}
+
+.currents-point-panel__coord-input:focus {
+  outline: none;
+  border-color: #60a5fa;
+}
+
+.currents-point-panel__coord-btn {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  border: none;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+}
+
+.currents-point-panel__coord-cancel {
+  font-size: 0.9rem;
+  line-height: 1;
+  background: none;
+  border: none;
+  opacity: 0.6;
+  cursor: pointer;
+  color: inherit;
+  padding: 0 0.15rem;
+}
+
+.currents-point-panel__coord-cancel:hover {
+  opacity: 1;
+}
+
+.currents-point-panel__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 0.5rem;
+  flex: 1;
+  min-height: 0;
+  overflow-x: auto;
+}
+
+.currents-point-panel__col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 12px;
+  padding: 0.6rem 0.7rem;
+}
+
+.currents-point-panel__eyebrow {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+.currents-point-panel__subtitle {
+  margin: 0.15rem 0 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.currents-point-panel__body {
+  flex: 1;
+  min-height: 0;
+}
+
+.currents-chart-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 155px;
+}
+
+.currents-chart-shell--ts {
+  display: flex;
+  flex-direction: column;
+}
+
+.currents-chart-shell--ts canvas {
+  flex: 1;
+  min-height: 0;
+}
+
+.currents-ts-glossary {
+  flex-shrink: 0;
+  padding-top: 0.3rem;
+  font-size: 0.62rem;
+  opacity: 0.55;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.currents-chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 155px;
+  font-size: 0.78rem;
+  opacity: 0.55;
+  text-align: center;
+  padding: 0 0.75rem;
+}
+
+.currents-point-panel__disabled {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  flex: 1;
+  text-align: center;
+  padding: 1.5rem;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+@media (max-width: 900px) {
+  .currents-point-panel__grid {
+    grid-template-columns: minmax(220px, 1fr);
+    grid-auto-flow: column;
+  }
+}

@@ -5,7 +5,6 @@ import useMapInteraction from '../hooks/useMapInteraction';
 import { UI_CONFIG } from '../config/UIConfig';
 import { MARINE_CONFIG } from '../config/marineVariables';
 import CompassRose from './CompassRose';
-import BasemapSwitcher from './BasemapSwitcher';
 import ForecastTimeline from './ForecastTimeline';
 import InundationThresholdEditor from './InundationThresholdEditor';
 import { isInundationLayer } from '../config/layerConfig';
@@ -21,6 +20,7 @@ import {
 import AdvisoryPdfModal from './advisory/AdvisoryPdfModal';
 import UserGuide from './UserGuide';
 import LandingAreaPanel from './landingArea/LandingAreaPanel';
+import CurrentsPanel from './currents/CurrentsPanel';
 import RouteForecastControls from './route/RouteForecastControls';
 import ScenarioComparisonPanel from './route/ScenarioComparisonPanel';
 import {
@@ -31,7 +31,7 @@ import {
   //StatusBar
 } from './shared/UIComponents';
 import wmsStyleManager from '../utils/WMSStyleManager';
-import { Waves, Wind, Navigation, Activity, Info, Settings, Timer, Triangle,  BadgeInfo , CloudRain, FastForward, SlidersHorizontal, FileDown, Crosshair, MapPin, Route as RouteIcon, FileText, Ship, HelpCircle } from 'lucide-react';
+import { Waves, Wind, Navigation, Activity, Info, Settings, Timer, Triangle,  BadgeInfo , CloudRain, FastForward, SlidersHorizontal, FileDown, Crosshair, MapPin, Route as RouteIcon, FileText, Ship, HelpCircle, Compass } from 'lucide-react';
 import FancyIcon from './FancyIcon';
 import '../styles/fancyIcons.css';
 
@@ -169,6 +169,14 @@ function handleSegmentedKeyDown(event) {
   items[nextIndex].click();
 }
 
+// Top-level forecast category — Wave holds every control that exists today;
+// Current is a placeholder tab for the ocean-current layer/controls to be
+// implemented later.
+const FORECAST_CATEGORY_TABS = [
+  { id: 'wave', label: 'Wave', icon: Waves },
+  { id: 'current', label: 'Current', icon: Compass },
+];
+
 // The suitability side panel used to stack vessel class, PDF export,
 // landing-area picker, and route planner as flat siblings under one
 // "Display Options" heading — functional, but the user had to visually
@@ -290,7 +298,6 @@ const ForecastApp = ({
   setActiveLayers,
   mapRef,
   mapInstance,
-  setBasemap,
   setBottomCanvasData,
   setShowBottomCanvas,
   minIndex,
@@ -337,6 +344,16 @@ const ForecastApp = ({
   onOceanStationSelect,
   timeDisplayZone,
   setTimeDisplayZone,
+  forecastCategory,
+  setForecastCategory,
+  CURRENT_LAYERS = [],
+  selectedCurrentLayer,
+  setSelectedCurrentLayer,
+  currentDepth,
+  setCurrentDepth,
+  currentDepthLevels,
+  currentsParticlesEnabled,
+  setCurrentsParticlesEnabled,
 }) => {
   const [showTimelineInPanel, setShowTimelineInPanel] = useState(false);
   const [showThresholdEditor, setShowThresholdEditor] = useState(false);
@@ -843,12 +860,6 @@ const ForecastApp = ({
         <div className="map-section">
           <div ref={mapRef} id="map" className="forecast-map"></div>
 
-          <BasemapSwitcher
-            mapInstance={mapInstance}
-            setBasemap={setBasemap}
-            position="top-left"
-          />
-
           {/* Enhanced Professional Compass Rose */}
           <CompassRose 
             position="top-right" 
@@ -857,7 +868,7 @@ const ForecastApp = ({
             mapRotation={0} 
           />
           
-          {selectedLegendLayer && selectedLegendLayer.sourceType === 'niue-suitability-raster' && (
+          {forecastCategory === 'wave' && selectedLegendLayer && selectedLegendLayer.sourceType === 'niue-suitability-raster' && (
             <div className="marine-legend marine-legend--suitability">
               <div
                 className="marine-legend-title"
@@ -926,7 +937,7 @@ const ForecastApp = ({
             </div>
           )}
 
-          {selectedLegendLayer && selectedLegendLayer.sourceType !== 'niue-suitability-raster' && (
+          {forecastCategory === 'wave' && selectedLegendLayer && selectedLegendLayer.sourceType !== 'niue-suitability-raster' && (
             <div className="marine-legend">
               {(() => {
                 const legendConfig = getLegendConfig(selectedLegendLayer.value, selectedLegendLayer);
@@ -981,7 +992,57 @@ const ForecastApp = ({
               <OceanStationsLegend stations={oceanStations} onSelect={onOceanStationSelect} />
             </div>
           )}
-          
+
+          {forecastCategory === 'current' && (() => {
+            const currentLayerCfg = CURRENT_LAYERS.find((l) => l.value === selectedCurrentLayer);
+            if (!currentLayerCfg) return null;
+            // Dynamic-range layers (velocity, temperature) report each frame's
+            // own 1st/99th-percentile range via overlayStats — use it once it
+            // actually matches the active layer/variable, so switching layers
+            // doesn't briefly show the previous one's stale range.
+            const hasLiveRange = currentLayerCfg.dynamicRange
+              && overlayStats?.variable === currentLayerCfg.variable
+              && Number.isFinite(overlayStats?.colorMin)
+              && Number.isFinite(overlayStats?.colorMax);
+            const colorRange = hasLiveRange
+              ? { min: overlayStats.colorMin, max: overlayStats.colorMax }
+              : currentLayerCfg.colorRange;
+            const legendConfig = buildContinuousLegendConfig({
+              colorRange,
+              colormapFn: getColormap(currentLayerCfg.colormap),
+              units: currentLayerCfg.units,
+              tickCount: 2,
+            });
+            const range = legendConfig.max - legendConfig.min;
+            // Clamped a few % in from the edges — a tick at a flush 0%/100%
+            // has its label vertically centered (translateY(-50%)) right on
+            // the container's edge, so half of it overflows into whatever
+            // sits above/below the legend (e.g. the title).
+            const toPos = (val) => {
+              const pct = range > 0 ? ((legendConfig.max - val) / range) * 100 : 0;
+              return Math.min(94, Math.max(6, pct));
+            };
+            return (
+              <div className="marine-legend">
+                <div className="marine-legend-title">{currentLayerCfg.label}</div>
+                <div className="marine-legend-content">
+                  <div className="marine-legend-gradient" style={{ background: legendConfig.gradient }} />
+                  <div className="marine-legend-scale">
+                    {legendConfig.ticks.map((tick) => (
+                      <div
+                        key={`current-legend-tick-${tick}`}
+                        className="marine-legend-tick"
+                        style={{ top: `${toPos(tick)}%`, transform: 'translateY(-50%)', left: '0px' }}
+                      >
+                        <span className="marine-legend-tick__value">{tick}{legendConfig.units}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Metadata Panel - Bottom Left */}
           {/* <button
             type="button"
@@ -1118,8 +1179,8 @@ const ForecastApp = ({
             </div>
           )} */}
 
-          {/* Bottom timeline overlay — hidden while pinned to the side panel */}
-          {!showTimelineInPanel && (
+          {/* Bottom timeline overlay — hidden while pinned to the side panel, and while on the Current tab (currents has its own TimeStep control) */}
+          {forecastCategory === 'wave' && !showTimelineInPanel && (
             <ForecastTimeline
               sliderIndex={sliderIndex}
               totalSteps={totalSteps}
@@ -1140,8 +1201,8 @@ const ForecastApp = ({
             />
           )}
         </div>
-
-        <div className="controls-panel">
+{/* right panel */}
+        <div className="controls-panel">          
           <div className="forecast-controls">
             <button
               type="button"
@@ -1155,6 +1216,39 @@ const ForecastApp = ({
               </span>
               <span className="user-guide-trigger__hint">Optional help</span>
             </button>
+
+            <div
+              className="map-display-option__segmented forecast-category-tabs"
+              role="tablist"
+              aria-label="Forecast category"
+              onKeyDown={handleSegmentedKeyDown}
+            >
+              {FORECAST_CATEGORY_TABS.map((tab) => {
+                const TabIcon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    id={`forecast-category-tab-${tab.id}`}
+                    className={`map-display-option__btn forecast-category-tab${forecastCategory === tab.id ? ' map-display-option__btn--active' : ''}`}
+                    role="tab"
+                    aria-selected={forecastCategory === tab.id}
+                    aria-controls={`forecast-category-panel-${tab.id}`}
+                    onClick={() => setForecastCategory(tab.id)}
+                  >
+                    <TabIcon size={15} />
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div
+              id="forecast-category-panel-wave"
+              role="tabpanel"
+              aria-labelledby="forecast-category-tab-wave"
+              hidden={forecastCategory !== 'wave'}
+            >
 
             <ControlGroup
               icon={<FancyIcon icon={Activity} animationType="shimmer" color="#00bcd4" />}
@@ -1544,6 +1638,40 @@ const ForecastApp = ({
                 /*coverage={UI_CONFIG.DATA_SOURCE.coverage}*/
               />
             </ControlGroup>
+            </div>
+
+            <div
+              id="forecast-category-panel-current"
+              role="tabpanel"
+              aria-labelledby="forecast-category-tab-current"
+              hidden={forecastCategory !== 'current'}
+            >
+              <CurrentsPanel
+                layers={CURRENT_LAYERS}
+                selectedLayer={selectedCurrentLayer}
+                onLayerChange={setSelectedCurrentLayer}
+                depth={currentDepth}
+                depthLevels={currentDepthLevels}
+                onDepthChange={setCurrentDepth}
+                sliderIndex={sliderIndex}
+                totalSteps={totalSteps}
+                minIndex={minIndex}
+                currentSliderDate={currentSliderDate}
+                availableTimestamps={capTime?.availableTimestamps}
+                forecastStartTime={forecastStartTime}
+                isPlaying={isPlaying}
+                playSpeedMs={playSpeedMs}
+                timeDisplayZone={timeDisplayZone}
+                onTimeIndexChange={handleSliderChange}
+                onPlayPause={handlePlayToggle}
+                onPrevious={handlePreviousTimestamp}
+                onNext={handleNextTimestamp}
+                onSpeedChange={setPlaySpeedMs}
+                overlayStats={overlayStats}
+                particlesEnabled={currentsParticlesEnabled}
+                onParticlesEnabledChange={setCurrentsParticlesEnabled}
+              />
+            </div>
           </div>
         </div>
       </div>

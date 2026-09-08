@@ -136,8 +136,99 @@ export const MAP_LAYERS = [
   },
 ];
 
+// ── Niue currents (CROCO ocean circulation model) ──────────────────────────
+// Regular lat/lon/depth/time grid — routed through ZarrOverlay (type: 'zarr'),
+// unlike the UGRID wave layers above. Dataset shape is (time:99, depth:9,
+// lat:690, lon:650); current_speed is precomputed server-side (sqrt(u²+v²)),
+// so no client-side derivation is needed for the raster.
+const NIUE_CURRENT_ZARR_BASE = (
+  process.env.REACT_APP_NIUE_CURRENT_ZARR_BASE_URL || 'https://s3.ap-southeast-2.wasabisys.com/spc-zarr-file'
+).replace(/\/+$/, '');
+const NIUE_CURRENT_DATASET = 'd1_temp_salt_uv_z_all.zarr';
+
+// Colour ranges/colormaps match the reference niu_current app (RASTER_VARIABLES
+// in zarrMapPanel.tsx): diverging red-blue for fields with a meaningful
+// midpoint (temperature, sea surface height), sequential viridis for fields
+// that don't (salinity, current speed).
+export const NIUE_CURRENT_LAYERS = [
+  {
+    id: 'niue-current-velocity',
+    value: 'velocity',
+    label: 'Velocity',
+    type: 'zarr',
+    variable: 'current_speed',
+    datasetName: NIUE_CURRENT_DATASET,
+    zarrBaseUrl: NIUE_CURRENT_ZARR_BASE,
+    colormap: 'viridis',
+    colorRange: { min: 0, max: 0.8 },
+    // Current speed varies a lot by depth (surface eddies vs. calm deep
+    // water) — a fixed 0-0.8 scale washes out most frames below the surface.
+    dynamicRange: true,
+    units: 'm/s',
+    hasDepth: true,
+    description: 'CROCO ocean current speed - Niue',
+    bounds: NIUE_BOUNDS,
+  },
+  {
+    id: 'niue-current-temperature',
+    value: 'temperature',
+    label: 'Temperature',
+    type: 'zarr',
+    variable: 'temperature',
+    datasetName: NIUE_CURRENT_DATASET,
+    zarrBaseUrl: NIUE_CURRENT_ZARR_BASE,
+    colormap: 'red-blue',
+    colorRange: { min: 20, max: 30 },
+    // -1000m is nowhere near the 20-30°C surface range this default is tuned
+    // for — a fixed scale either clips the whole deep-water frame to one end
+    // or washes it out, so use each frame's own range instead.
+    dynamicRange: true,
+    units: '°C',
+    hasDepth: true,
+    description: 'CROCO sea water temperature - Niue',
+    bounds: NIUE_BOUNDS,
+  },
+  {
+    id: 'niue-current-salinity',
+    value: 'salinity',
+    label: 'Salinity',
+    type: 'zarr',
+    variable: 'salinity',
+    datasetName: NIUE_CURRENT_DATASET,
+    zarrBaseUrl: NIUE_CURRENT_ZARR_BASE,
+    colormap: 'viridis',
+    colorRange: { min: 34, max: 36 },
+    units: 'PSU',
+    hasDepth: true,
+    description: 'CROCO sea water salinity - Niue',
+    bounds: NIUE_BOUNDS,
+  },
+  {
+    id: 'niue-current-ssh',
+    value: 'seaSurfaceHeight',
+    label: 'Sea Surface Height',
+    type: 'zarr',
+    variable: 'zeta',
+    datasetName: NIUE_CURRENT_DATASET,
+    zarrBaseUrl: NIUE_CURRENT_ZARR_BASE,
+    colormap: 'red-blue',
+    // zeta is free-surface elevation above geoid, not a zero-centred anomaly —
+    // the live data clusters around 0.4-0.9m, so the domain matches that band
+    // rather than 0-centered (else the whole map washes out to one color).
+    colorRange: { min: 0.4, max: 0.9 },
+    units: 'm',
+    hasDepth: false,
+    description: 'CROCO sea surface height - Niue',
+    bounds: NIUE_BOUNDS,
+  },
+];
+
 export function findLayerById(id) {
-  return MAP_LAYERS.find((layer) => layer.id === id || layer.value === id) ?? null;
+  return (
+    MAP_LAYERS.find((layer) => layer.id === id || layer.value === id)
+    ?? NIUE_CURRENT_LAYERS.find((layer) => layer.id === id || layer.value === id)
+    ?? null
+  );
 }
 
 export { NIUE_BOUNDS };

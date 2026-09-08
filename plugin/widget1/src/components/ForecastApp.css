@@ -2807,6 +2807,49 @@
   grid-template-columns: repeat(4, 1fr);
 }
 
+/* Top-level Wave / Current forecast category tabs. */
+.forecast-category-tabs {
+  margin: 0.85rem 0 0.15rem;
+}
+
+.forecast-category-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+}
+
+.forecast-category-placeholder {
+  display: grid;
+  justify-items: center;
+  gap: 0.4rem;
+  padding: 2.4rem 1rem;
+  margin-top: 0.75rem;
+  text-align: center;
+  color: rgba(210, 228, 255, 0.72);
+  background: rgba(6, 18, 32, 0.42);
+  border: 1px dashed rgba(100, 180, 220, 0.28);
+  border-radius: 8px;
+}
+
+.forecast-category-placeholder__icon {
+  opacity: 0.6;
+}
+
+.forecast-category-placeholder__title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: rgba(224, 247, 255, 0.9);
+}
+
+.forecast-category-placeholder__hint {
+  max-width: 22rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  opacity: 0.68;
+}
+
 @media (max-width: 480px) {
   .map-display-option__segmented--tabs {
     grid-template-columns: repeat(2, 1fr);

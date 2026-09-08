@@ -136,6 +136,16 @@ const wavePeriod = stopsColormap([
   [1.00, [110,  20,  10]],  // dark brick-red         — 20 s+
 ]);
 
+// Viridis — perceptually-uniform sequential ramp (violet -> blue -> teal ->
+// green -> yellow). Used for ordered scalar fields with no natural midpoint
+// (salinity, current speed) where a diverging red/blue scale would wrongly
+// imply one, and whose luminance-only ramp still reads correctly in grayscale.
+const VIRIDIS_STOPS = [
+  [68, 1, 84], [72, 40, 120], [62, 74, 137], [49, 104, 142], [38, 130, 142],
+  [31, 158, 137], [53, 183, 121], [109, 205, 89], [180, 222, 44], [253, 231, 37],
+].map((color, i, arr) => [i / (arr.length - 1), color]);
+const viridis = stopsColormap(VIRIDIS_STOPS);
+
 function quantize(fn, bands) {
   const lut = Array.from({ length: bands }, (_, i) => fn(i / (bands - 1)));
   return (t) => lut[Math.min(bands - 1, Math.floor(clamp01(t) * bands))];
@@ -152,6 +162,7 @@ export function getColormap(name, numBands = null) {
   else if (n === 'wave-period' || n === 'waveperiod') fn = wavePeriod;
   else if (n === 'ylorrd' || n === 'yl-or-rd') fn = ylOrRd;
   else if (n === 'turbo') fn = turbo;
+  else if (n === 'viridis') fn = viridis;
   else fn = jet;
   return numBands ? quantize(fn, numBands) : fn;
 }

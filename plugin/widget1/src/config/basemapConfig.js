@@ -12,41 +12,13 @@ export const BASEMAP_OPTIONS = [
       tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
       tileSize: 256,
       attribution: 'Tiles &copy; Esri',
-      maxzoom: 19,
-    },
-  },
-  {
-    id: 'street',
-    label: 'Street',
-    icon: 'bi-signpost-2',
-    source: {
-      type: 'raster',
-      tiles: [
-        'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-        'https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-      ],
-      tileSize: 256,
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      maxzoom: 20,
-    },
-  },
-  {
-    id: 'dark',
-    label: 'Dark',
-    icon: 'bi-moon-stars',
-    source: {
-      type: 'raster',
-      tiles: [
-        'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-        'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-        'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-        'https://d.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      ],
-      tileSize: 256,
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      maxzoom: 20,
+      // Esri's free World_Imagery coverage for small/remote Pacific islands
+      // (Niue included) tops out around z17 in practice — verified z18/z19
+      // tiles over Niue return a blank "Map data not yet available" gray
+      // placeholder instead of real imagery. Capping here makes MapLibre
+      // overzoom (stretch) the last real z17 tile past this point instead of
+      // fetching that blank placeholder.
+      maxzoom: 17,
     },
   },
 ];

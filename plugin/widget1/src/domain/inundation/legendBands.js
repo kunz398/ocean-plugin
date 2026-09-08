@@ -85,7 +85,7 @@ export function buildBreakLegendConfig({ colorBreaks, colorLabels, colorRange, u
  * colormapFn must be the same function used by the renderer so colours match exactly.
  * Returns the same shape as getLegendConfig so the existing legend JSX works unchanged.
  */
-export function buildContinuousLegendConfig({ colorRange, colormapFn, units = '', stopCount = 12 }) {
+export function buildContinuousLegendConfig({ colorRange, colormapFn, units = '', stopCount = 12, tickCount = 5 }) {
   const { min, max } = colorRange;
   const range = max - min || 1;
 
@@ -96,10 +96,11 @@ export function buildContinuousLegendConfig({ colorRange, colormapFn, units = ''
   });
   const gradient = `linear-gradient(to top, ${stops.join(', ')})`;
 
-  const tickCount = 5;
-  const ticks = Array.from({ length: tickCount }, (_, i) =>
-    Number((min + (range * i) / (tickCount - 1)).toFixed(1))
-  );
+  const ticks = tickCount <= 1
+    ? [min]
+    : Array.from({ length: tickCount }, (_, i) =>
+        Number((min + (range * i) / (tickCount - 1)).toFixed(1))
+      );
 
   return { gradient, min, max, units, ticks };
 }
