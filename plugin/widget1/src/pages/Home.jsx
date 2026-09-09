@@ -228,6 +228,7 @@ function Home() {
     overlayStats,
     depthLevels,
     fitBounds,
+    setBasemap,
     removePinMarker,
     goToCurrentsPoint,
   } = useZarrMap({
@@ -669,6 +670,7 @@ function Home() {
         setActiveLayers={setActiveLayers}
         mapRef={mapRef}
         mapInstance={mapInstance}
+        setBasemap={setBasemap}
         isUpdatingVisualization={loading}
         minIndex={0}
         isBuffering={false}

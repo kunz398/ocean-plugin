@@ -5,6 +5,7 @@ import useMapInteraction from '../hooks/useMapInteraction';
 import { UI_CONFIG } from '../config/UIConfig';
 import { MARINE_CONFIG } from '../config/marineVariables';
 import CompassRose from './CompassRose';
+import BasemapSwitcher from './BasemapSwitcher';
 import ForecastTimeline from './ForecastTimeline';
 import InundationThresholdEditor from './InundationThresholdEditor';
 import { isInundationLayer } from '../config/layerConfig';
@@ -298,6 +299,7 @@ const ForecastApp = ({
   setActiveLayers,
   mapRef,
   mapInstance,
+  setBasemap,
   setBottomCanvasData,
   setShowBottomCanvas,
   minIndex,
@@ -859,6 +861,12 @@ const ForecastApp = ({
       <div className="main-container">
         <div className="map-section">
           <div ref={mapRef} id="map" className="forecast-map"></div>
+
+          <BasemapSwitcher
+            mapInstance={mapInstance}
+            setBasemap={setBasemap}
+            position="top-left"
+          />
 
           {/* Enhanced Professional Compass Rose */}
           <CompassRose 

@@ -11,29 +11,12 @@ import { WaveParticleOverlay } from '../lib/WaveParticleOverlay';
 import { CurrentsParticleOverlay } from '../lib/CurrentsParticleOverlay';
 import { SwellSourceArcOverlay } from '../lib/SwellSourceArcOverlay';
 import { findLayerById } from '../lib/mapLayersConfig';
-import { BASEMAP_LAYER_ID, BASEMAP_OPTIONS } from '../config/basemapConfig';
+import { BASEMAP_OPTIONS, DEFAULT_BASEMAP_ID } from '../config/basemapConfig';
 import { routeSamplesToSegmentFeatures } from '../services/routeForecastService';
 import {
   fetchRiskDetails,
   fetchRiskPoints as fetchRiskPointsData,
 } from '../services/riskDataService';
-
-// Satellite/hybrid tiles from ESRI — no key needed
-const ESRI_SAT_STYLE = {
-  version: 8,
-  sources: {
-    sat: {
-      type: 'raster',
-      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-      tileSize: 256,
-      attribution: 'Tiles © Esri',
-      // See basemapConfig.js's satellite source for why this is capped at 17,
-      // not 19 — real Esri imagery for Niue runs out around there.
-      maxzoom: 17,
-    },
-  },
-  layers: [{ id: 'sat', type: 'raster', source: 'sat' }],
-};
 
 const RISK_SOURCE = 'risk-points-src';
 const RISK_CIRCLES_LAYER = 'risk-circles';
@@ -158,6 +141,11 @@ export function useZarrMap({
   const resizeFrameRef = useRef(null);
   const riskLatestReqRef = useRef(0);
   const riskPointsRef = useRef([]);
+  // Holds the map-init effect's addCustomMapLayers() so setBasemap() (a
+  // separate useCallback) can re-run it after every map.setStyle() call —
+  // a style swap wipes every style-level source/layer, unlike the mount-only
+  // effect's own closure.
+  const addCustomMapLayersRef = useRef(null);
 
   const [timeCount, setTimeCount] = useState(1);
   const [timeLabels, setTimeLabels] = useState([]);
@@ -200,9 +188,10 @@ export function useZarrMap({
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return;
 
+    const defaultBasemap = BASEMAP_OPTIONS.find((b) => b.id === DEFAULT_BASEMAP_ID) ?? BASEMAP_OPTIONS[0];
     const map = new maplibregl.Map({
       container: mapRef.current,
-      style: ESRI_SAT_STYLE,
+      style: defaultBasemap.style,
       center: [-169.86, -19.05],
       zoom: 8,
       maxPitch: 0,
@@ -222,8 +211,14 @@ export function useZarrMap({
       resizeObserverRef.current.observe(mapRef.current);
     }
 
-    const onLoad = () => {
-      // Risk points layer
+    // Adds the risk-points and route sources/layers this app draws directly
+    // on the MapLibre style (as opposed to the ZarrOverlay/UgridOverlay data
+    // layer, which renders via a deck.gl control and so survives a basemap
+    // switch on its own). setBasemap() below calls map.setStyle() to support
+    // full vector-style basemaps (dark/osm/carto, not just a raster swap),
+    // which wipes every style-level source/layer — so this needs to re-run
+    // after every switch, not just once at load.
+    const addCustomMapLayers = () => {
       map.addSource(RISK_SOURCE, {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
@@ -279,6 +274,17 @@ export function useZarrMap({
           'line-opacity': 0.9,
         },
       });
+      doRefreshRisk();
+    };
+    addCustomMapLayersRef.current = addCustomMapLayers;
+
+    const onLoad = () => {
+      addCustomMapLayers();
+      // Event listeners are registered once, here, rather than inside
+      // addCustomMapLayers — MapLibre keeps a layer-filtered listener bound
+      // for the lifetime of the map regardless of style changes, so as long
+      // as a layer with the same id exists again after a basemap switch,
+      // these keep firing without needing to be re-attached.
       map.on('click', RISK_CIRCLES_LAYER, onRiskClick);
       map.on('mouseenter', RISK_CIRCLES_LAYER, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', RISK_CIRCLES_LAYER, () => { map.getCanvas().style.cursor = ''; });
@@ -289,7 +295,6 @@ export function useZarrMap({
       map.on('mouseleave', ROUTE_SEGMENTS_LAYER, () => { routeHoverPopupRef.current?.remove(); });
       map.on('moveend', doRefreshRisk);
       map.on('zoomend', doRefreshRisk);
-      if (riskEnabled) doRefreshRisk();
       setMapReady(true);
     };
 
@@ -1032,31 +1037,29 @@ export function useZarrMap({
     map.fitBounds(mlBounds, { padding: 30, animate: true, ...options });
   }, []);
 
-  // Swaps only the 'sat' source/layer in place (never map.setStyle()) so the
-  // SFINCS/inundation/suitability overlays — all added via addSource/addLayer
-  // outside the style JSON — survive the switch untouched.
+  // Full style swap (map.setStyle()) — needed because some basemaps here
+  // (dark/osm/carto) are complete external vector styles with their own
+  // sources/sprite/glyphs, not a single raster layer that can be swapped in
+  // place. This wipes every style-level source/layer, so once the new style
+  // finishes loading it re-adds: (a) the risk-points/route sources+layers
+  // this hook owns directly, and (b) the currently active data-layer
+  // overlay's own source/layer, for whichever overlay type
+  // (SfincsRasterOverlay/NiueInundationOverlay/NiueSuitabilityOverlay) adds
+  // one straight to the MapLibre style. ZarrOverlay/UgridOverlay/particle
+  // overlays render via a deck.gl control (or a plain DOM canvas) instead,
+  // which survives setStyle on its own — reattachToMap() is simply absent on
+  // those, so the `?.()` below is a no-op for them.
   const setBasemap = useCallback((basemapId) => {
     const map = mapInstance.current;
     if (!map) return;
     const option = BASEMAP_OPTIONS.find((b) => b.id === basemapId);
     if (!option) return;
 
-    // addSource/addLayer/removeLayer are safe any time after the map exists —
-    // no need to gate on isStyleLoaded(), which also reflects whether raster
-    // tile sources have finished loading and can be false during ordinary
-    // panning/zooming. Gating on it made this silently no-op: it fell back to
-    // map.once('load', ...), but 'load' only ever fires once in a map's
-    // lifetime (at initial style load), so that listener would never fire
-    // again and the basemap switch would just be dropped.
-    if (map.getLayer(BASEMAP_LAYER_ID)) map.removeLayer(BASEMAP_LAYER_ID);
-    if (map.getSource(BASEMAP_LAYER_ID)) map.removeSource(BASEMAP_LAYER_ID);
-    map.addSource(BASEMAP_LAYER_ID, option.source);
-    const firstLayerId = map.getStyle()?.layers?.[0]?.id;
-    // raster-fade-duration: 0 — otherwise MapLibre cross-fades the new tiles
-    // against the just-destroyed previous source's tiles, and the next render
-    // tick throws (parentTile.texture is gone): "Cannot read properties of
-    // undefined (reading 'bind')" in draw_raster.
-    map.addLayer({ id: BASEMAP_LAYER_ID, type: 'raster', source: BASEMAP_LAYER_ID, paint: { 'raster-fade-duration': 0 } }, firstLayerId);
+    map.setStyle(option.style, { diff: false });
+    map.once('style.load', () => {
+      addCustomMapLayersRef.current?.();
+      overlayRef.current?.reattachToMap?.();
+    });
   }, []);
 
   // ── capTime compatibility shim for ForecastApp/InundationWindowControl ─────

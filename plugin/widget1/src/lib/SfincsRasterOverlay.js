@@ -125,6 +125,15 @@ export class SfincsRasterOverlay {
     this._sourceReady = true;
   }
 
+  // Called by useZarrMap's setBasemap() after a map.setStyle() basemap
+  // switch — a style swap wipes every style-level source/layer, and this one
+  // (unlike ZarrOverlay/UgridOverlay, which render via a deck.gl control that
+  // survives setStyle on its own) is added directly to the MapLibre style.
+  reattachToMap() {
+    if (this._destroyed || !this._sourceReady) return;
+    this._addToMap();
+  }
+
   _removeFromMap() {
     try {
       if (this._map.getLayer(LAYER_ID))   this._map.removeLayer(LAYER_ID);
